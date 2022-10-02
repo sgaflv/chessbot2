@@ -1,0 +1,11 @@
+[package]
+name = "chessbot"
+version = "0.1.0"
+authors = ["Stanislav Golubtsov"]
+edition = "2018"
+
+[dependencies]
+rand = "0.8.4"
+arr_macro = "0.1.3"
+log = "0.4.13"
+simplelog = "0.12.0"
