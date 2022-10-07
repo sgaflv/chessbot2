@@ -15,13 +15,14 @@ impl ChessEngine {
         }
     }
 
-    pub fn min_max_search(&self, penalty: i32, depth: u32, alpha: i32, beta: i32, state: &ChessState) -> i32 {
+    pub fn min_max_search(&self, penalty: i32, depth: u32, alpha: i32, beta: i32, state: &mut ChessState) -> i32 {
         if depth == 0 {
             // just estimate the current position and return its score
             return evaluate_position(state);
         }
 
-        let mut moves: Vec<ChessState> = Vec::new();
+        let mut moves: Vec<ChessMove> = Vec::with_capacity(20);
+
         self.move_generator.generate_moves(state, &mut moves);
 
         if moves.len() == 0 {
@@ -41,9 +42,13 @@ impl ChessEngine {
 
         return if state.next_to_move == Side::White {
 
-            for cur_state in moves.iter() {
+            for cur_move in moves.iter() {
 
-                let score = self.min_max_search(penalty + 1, depth - 1, alpha, beta, cur_state);
+                state.do_move(cur_move);
+
+                let score = self.min_max_search(penalty + 1, depth - 1, alpha, beta, state);
+
+                state.undo_move(cur_move);
 
                 alpha = cmp::max(alpha, score);
 
@@ -55,8 +60,11 @@ impl ChessEngine {
             alpha
         } else {
 
-            for cur_state in moves.iter() {
-                let score = self.min_max_search(penalty + 1, depth - 1, alpha, beta, cur_state);
+            for cur_move in moves.iter() {
+
+                state.do_move(cur_move);
+                let score = self.min_max_search(penalty + 1, depth - 1, alpha, beta, state);
+                state.undo_move(cur_move);
 
                 beta = cmp::min(beta, score);
 
@@ -71,8 +79,8 @@ impl ChessEngine {
 
     }
 
-    pub fn find_best_move(&self, state: &ChessState) -> Option<ChessMove> {
-        let mut moves: Vec<ChessState> = Vec::new();
+    pub fn find_best_move(&self, state: &mut ChessState) -> Option<ChessMove> {
+        let mut moves: Vec<ChessMove> = Vec::new();
 
         self.move_generator.generate_moves(state, &mut moves);
 
@@ -86,7 +94,12 @@ impl ChessEngine {
         let (mut min, mut max) = (0, 0);
 
         for (idx, m) in moves.iter().enumerate() {
-            let score = self.min_max_search(0, 4, i32::MIN, i32::MAX, m);
+
+            state.do_move(m);
+
+            let score = self.min_max_search(0, 4, i32::MIN, i32::MAX, state);
+
+            state.undo_move(m);
 
             if idx == 0 {
                 min = score;
@@ -104,7 +117,8 @@ impl ChessEngine {
         }
 
         info!("min: {}, max: {}, best score: {}", min, max, best_score);
-        let next_move = state.get_move(moves.get(best_index).unwrap());
+
+        let next_move = moves[best_index];
 
         Some(next_move)
     }

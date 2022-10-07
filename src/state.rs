@@ -2,122 +2,188 @@ use std::fmt;
 use std::fmt::Formatter;
 
 use crate::bboard::*;
-use crate::common::{add_bit, castle_tuple_k_r_e_na_km_rm, update_castles};
 use crate::debug::Demo;
-use crate::game_setup::{ChessCoord, ChessMove};
-use crate::messaging::send_message;
+use crate::game_setup::ChessMove;
 
-#[derive(Copy, Clone, Eq, PartialEq, Hash, Debug)]
-pub enum Piece {
-    King,
-    Pawn,
-    Rook,
-    Knight,
-    Bishop,
+pub enum CastleSide {
     Queen,
+    King,
 }
 
-pub static PIECES: [Piece; 6] = [
-    Piece::King,
-    Piece::Pawn,
-    Piece::Rook,
-    Piece::Knight,
-    Piece::Bishop,
-    Piece::Queen,
-];
+#[derive(Copy, Clone, Eq, PartialEq, PartialOrd, Hash, Debug)]
+pub enum BBPiece {
+    WKing = 0,
+    WPawn,
+    WRook,
+    WKnight,
+    WBishop,
+    WQueen,
+    WAll,
+    WAttacks,
+    WCastles,
+    WEnPassant,
+    BKing,
+    BPawn,
+    BRook,
+    BKnight,
+    BBishop,
+    BQueen,
+    BAll,
+    BAttacks,
+    BCastles,
+    BEnPassant,
+}
 
-impl Piece {
-    pub fn values() -> &'static [Piece; 6] {
-        &PIECES
-    }
+impl BBPiece {
 
     #[inline]
     pub fn idx(&self) -> usize {
         (*self) as usize
     }
 
+    #[inline]
+    pub fn opposite_idx(&self) -> usize {
+        let ret = (*self) as usize;
+
+        if ret < BBPiece::BKing as usize { 
+            ret + BBPiece::BKing as usize
+        } else {
+            ret - BBPiece::BKing as usize
+        }
+    }
+
+    #[inline]
     pub fn value(&self) -> i32 {
+
+        let values = [
+            40000, // King
+            100,   // Pawn
+            500,   // Rook
+            320,   // Knight
+            330,   // Bishop
+            900,   // Queen
+            0,     // all
+            0,     // WAttack
+            0,     // WCastles
+            0,     // WEnPassant
+            -40000, // king
+            -100,   // pawn
+            -500,   // rook
+            -320,   // knight
+            -330,   // bishop
+            -900,   // queen
+            -0,     // all
+            -0,     // BAttack
+            -0,     // BCastles
+            -0,     // BEnPassant
+        ];
+
+        let idx = *self as usize;
+
+        values[idx]
+
+    }
+
+    #[inline]
+    pub fn get_pieces() -> [BBPiece; 12] {
+        [
+            BBPiece::WKing,
+            BBPiece::WPawn,
+            BBPiece::WRook,
+            BBPiece::WKnight,
+            BBPiece::WBishop,
+            BBPiece::WQueen,
+            BBPiece::BKing,
+            BBPiece::BPawn,
+            BBPiece::BRook,
+            BBPiece::BKnight,
+            BBPiece::BBishop,
+            BBPiece::BQueen,
+        ]
+    }
+
+    #[inline]
+    pub fn to_string(&self) -> String {
         match self {
-            Piece::Pawn => 100,
-            Piece::Rook => 500,
-            Piece::Knight => 320,
-            Piece::Bishop => 330,
-            Piece::Queen => 900,
-            Piece::King => 40000,
+            BBPiece::WKing => "King".to_string(),
+            BBPiece::WPawn => "Pawn".to_string(),
+            BBPiece::WRook => "Rook".to_string(),
+            BBPiece::WKnight => "Knight".to_string(),
+            BBPiece::WBishop  => "Bishop".to_string(),
+            BBPiece::WQueen  => "Queen".to_string(),
+            BBPiece::BKing => "king".to_string(),
+            BBPiece::BPawn => "pawn".to_string(),
+            BBPiece::BRook => "rook".to_string(),
+            BBPiece::BKnight => "knigt".to_string(),
+            BBPiece::BBishop  => "bishop".to_string(),
+            BBPiece::BQueen  => "queen".to_string(),
+            _ => "".to_string(),
         }
     }
 
-    pub fn to_string(&self, side: Side) -> String {
-        match side {
-            Side::White => match self {
-                Piece::Pawn => "Pawn".to_string(),
-                Piece::Rook => "Rook".to_string(),
-                Piece::Knight => "Knight".to_string(),
-                Piece::Bishop => "Bishop".to_string(),
-                Piece::Queen => "Queen".to_string(),
-                Piece::King => "King".to_string(),
-            },
-            Side::Black => match self {
-                Piece::Pawn => "pawn".to_string(),
-                Piece::Rook => "rook".to_string(),
-                Piece::Knight => "knight".to_string(),
-                Piece::Bishop => "bishop".to_string(),
-                Piece::Queen => "queen".to_string(),
-                Piece::King => "king".to_string(),
-            },
-        }
-    }
-    pub fn to_char(&self, side: Side) -> char {
-        match side {
-            Side::White => match self {
-                Piece::Pawn => 'P',
-                Piece::Rook => 'R',
-                Piece::Knight => 'N',
-                Piece::Bishop => 'B',
-                Piece::Queen => 'Q',
-                Piece::King => 'K',
-            },
-            Side::Black => match self {
-                Piece::Pawn => 'p',
-                Piece::Rook => 'r',
-                Piece::Knight => 'n',
-                Piece::Bishop => 'b',
-                Piece::Queen => 'q',
-                Piece::King => 'k',
-            },
+    #[inline]
+    pub fn to_char(&self) -> char {
+        match *self {
+            BBPiece::WKing => 'K',
+            BBPiece::WPawn => 'P',
+            BBPiece::WRook => 'R',
+            BBPiece::WKnight => 'N',
+            BBPiece::WBishop  => 'B',
+            BBPiece::WQueen  => 'Q',
+            BBPiece::BKing => 'k',
+            BBPiece::BPawn => 'p',
+            BBPiece::BRook => 'r',
+            BBPiece::BKnight => 'n',
+            BBPiece::BBishop  => 'b',
+            BBPiece::BQueen  => 'q',
+            _ => '*',
         }
     }
 
-    pub fn from_byte(c: &u8) -> (Piece, Side) {
+    #[inline]
+    pub fn from_byte(c: &u8) -> BBPiece {
         match *c {
-            b'P' => (Piece::Pawn, Side::White),
-            b'R' => (Piece::Rook, Side::White),
-            b'N' => (Piece::Knight, Side::White),
-            b'B' => (Piece::Bishop, Side::White),
-            b'Q' => (Piece::Queen, Side::White),
-            b'K' => (Piece::King, Side::White),
-            b'p' => (Piece::Pawn, Side::Black),
-            b'r' => (Piece::Rook, Side::Black),
-            b'n' => (Piece::Knight, Side::Black),
-            b'b' => (Piece::Bishop, Side::Black),
-            b'q' => (Piece::Queen, Side::Black),
-            b'k' => (Piece::King, Side::Black),
+            b'P' => BBPiece::WPawn,
+            b'R' => BBPiece::WRook,
+            b'N' => BBPiece::WKnight,
+            b'B' => BBPiece::WBishop,
+            b'Q' => BBPiece::WQueen,
+            b'K' => BBPiece::WKing,
+            b'p' => BBPiece::BPawn,
+            b'r' => BBPiece::BRook,
+            b'n' => BBPiece::BKnight,
+            b'b' => BBPiece::BBishop,
+            b'q' => BBPiece::BQueen,
+            b'k' => BBPiece::BKing,
             _ => panic!(),
         }
     }
+
+    #[inline]
+    pub fn get_side(&self) -> Side {
+        if *self < BBPiece::BKing {
+            Side::White
+        } else {
+            Side::Black
+        }
+    }
+    
 }
 
 static INITIAL_BOARD: &str = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
-#[derive(Copy, Clone, Eq, PartialEq, Debug, Hash)]
+#[derive(Copy, Clone, Eq, PartialEq, PartialOrd, Debug, Hash)]
 pub enum Side {
-    White,
-    Black,
+    White = 1,
+    Black = -1,
 }
 
 impl Side {
-    pub fn idx(&self) -> i32 {
-        *self as i32
+    pub fn idx(&self) -> usize {
+        match self {
+            Side::White => 0,
+            Side::Black => 1,
+        }
     }
 
     pub fn value(&self) -> i32 {
@@ -128,10 +194,12 @@ impl Side {
     }
 
     pub fn opposite(&self) -> Side {
+
         match self {
             Side::White => Side::Black,
             Side::Black => Side::White,
         }
+
     }
 
     pub fn from_byte(c: u8) -> Side {
@@ -156,115 +224,13 @@ impl fmt::Display for Side {
     }
 }
 
-#[derive(Eq, PartialEq, Debug, Clone)]
-pub struct SideState {
-    pub king_side_castle: bool,
-    pub queen_side_castle: bool,
-
-    pub boards: [BBoard; 6],
-
-    pub all: BBoard,
-}
-
-impl SideState {
-    pub fn new() -> SideState {
-        SideState {
-            king_side_castle: false,
-            queen_side_castle: false,
-            boards: [0u64; 6],
-
-            all: 0u64,
-        }
-    }
-
-    pub fn update(&mut self) {
-        self.all = 0u64;
-        for b in self.boards.iter() {
-            self.all |= *b;
-        }
-    }
-
-    pub fn castle_state(&self) -> (bool, bool) {
-        (self.king_side_castle, self.queen_side_castle)
-    }
-
-    pub fn set_castle_state(&mut self, state: (bool, bool)) {
-        self.king_side_castle = state.0;
-        self.queen_side_castle = state.1;
-    }
-
-    pub fn set_king_side_castle(&mut self, value: bool) {
-        self.king_side_castle = value;
-    }
-
-    pub fn set_queen_side_castle(&mut self, value: bool) {
-        self.queen_side_castle = value;
-    }
-
-    pub fn get_mut_board(&mut self, piece: Piece) -> &mut BBoard {
-        &mut self.boards[piece.idx()]
-    }
-
-    pub fn get_board(&self, piece: Piece) -> BBoard {
-        self.boards[piece.idx()]
-    }
-
-    pub fn add_bit(&mut self, piece: Piece, to_add: BBoard) {
-        let board = self.get_mut_board(piece);
-        *board |= to_add;
-        self.all |= to_add;
-    }
-
-    pub fn remove_bit(&mut self, to_remove: BBoard) -> Option<Piece> {
-        let inv = !to_remove;
-
-        if self.all & to_remove == 0 {
-            return None;
-        }
-
-        self.all &= inv;
-
-        if self.get_board(Piece::Pawn) & to_remove > 0 {
-            *self.get_mut_board(Piece::Pawn) &= inv;
-            return Some(Piece::Pawn);
-        }
-
-        if self.get_board(Piece::Rook) & to_remove > 0 {
-            *self.get_mut_board(Piece::Rook) &= inv;
-            return Some(Piece::Rook);
-        }
-
-        if self.get_board(Piece::Knight) & to_remove > 0 {
-            *self.get_mut_board(Piece::Knight) &= inv;
-            return Some(Piece::Knight);
-        }
-
-        if self.get_board(Piece::Bishop) & to_remove > 0 {
-            *self.get_mut_board(Piece::Bishop) &= inv;
-            return Some(Piece::Bishop);
-        }
-
-        if self.get_board(Piece::Queen) & to_remove > 0 {
-            *self.get_mut_board(Piece::Queen) &= inv;
-            return Some(Piece::Queen);
-        }
-
-        if self.get_board(Piece::King) & to_remove > 0 {
-            *self.get_mut_board(Piece::King) &= inv;
-            return Some(Piece::King);
-        }
-
-        panic!();
-    }
-}
 
 #[derive(Eq, PartialEq, Debug, Clone)]
 pub struct ChessState {
     pub next_to_move: Side,
-    pub en_passant: BBoard, // en-passant field from the last move
 
-    pub white_state: SideState,
-    pub black_state: SideState,
+    bboards: [BBoard; (BBPiece::BKing as usize) * 2],
+
     pub half_move_count: u32,
     pub full_move_count: u32,
 }
@@ -273,90 +239,131 @@ impl ChessState {
     pub fn new_empty() -> ChessState {
         ChessState {
             next_to_move: Side::White,
-            en_passant: 0,
-            white_state: SideState::new(),
-            black_state: SideState::new(),
+            bboards: [0u64; (BBPiece::BKing as usize) * 2],
             half_move_count: 0,
             full_move_count: 0,
         }
+    }
+
+    #[inline]
+    pub fn bboard(&self, board: BBPiece) -> BBoard {
+        self.bboards[board.idx()]
+    }
+
+    #[inline]
+    pub fn bboard_mut(&mut self, board: BBPiece) -> &mut BBoard {
+        &mut self.bboards[board.idx()]
+    }
+
+    #[inline]
+    pub fn get_offset(side: Side) -> usize {
+        if side == Side::White {
+            0
+        } else {
+            BBPiece::BKing as usize
+        }
+    }
+
+    #[inline]
+    pub fn bboard_ofs(&mut self, board: BBPiece, offset: usize) -> BBoard {
+        debug_assert!(board.get_side() == Side::White);
+        self.bboards[board.idx() + offset]
     }
 
     pub fn new_game() -> ChessState {
         ChessState::from_fen(INITIAL_BOARD)
     }
 
-    pub fn init_next_move(&self) -> ChessState {
-        let mut new_state = self.clone();
-
-        new_state.next_to_move = self.next_to_move.opposite();
-        new_state.en_passant = 0u64;
-        if new_state.next_to_move == Side::White {
-            new_state.full_move_count += 1;
+    pub fn do_move(&mut self, chess_move: &ChessMove) {
+        for delta in chess_move.deltas {
+            *self.bboard_mut(delta.0) ^= delta.1;
         }
-        new_state.half_move_count += 1;
 
-        new_state
+        self.next_to_move = self.next_to_move.opposite();
+
+        if self.next_to_move == Side::White {
+            self.full_move_count += 1;
+        }
+        self.half_move_count += 1;
+
     }
 
-    pub fn get_mut_side_state(&mut self, side: Side) -> &mut SideState {
-        match side {
-            Side::White => &mut self.white_state,
-            Side::Black => &mut self.black_state,
+    pub fn undo_move(&mut self, chess_move: &ChessMove) {
+        for delta in chess_move.deltas {
+            *self.bboard_mut(delta.0) ^= delta.1;
         }
-    }
 
-    pub fn get_mut_sides_state(&mut self, side: Side) -> (&mut SideState, &mut SideState) {
-        match side {
-            Side::White => (&mut self.white_state, &mut self.black_state),
-            Side::Black => (&mut self.black_state, &mut self.white_state),
+        if self.next_to_move == Side::White {
+            self.full_move_count -= 1;
         }
-    }
+        self.half_move_count -= 1;
 
-    pub fn get_side_state(&self, side: Side) -> &SideState {
-        match side {
-            Side::White => &self.white_state,
-            Side::Black => &self.black_state,
-        }
-    }
-
-    pub fn get_mut_board(&mut self, coord: &(Piece, Side)) -> &mut BBoard {
-        match coord.1 {
-            Side::White => self.white_state.get_mut_board(coord.0),
-            Side::Black => self.black_state.get_mut_board(coord.0),
-        }
-    }
-
-    pub fn get_board(&self, coord: &(Piece, Side)) -> BBoard {
-        match coord.1 {
-            Side::White => self.white_state.get_board(coord.0),
-            Side::Black => self.black_state.get_board(coord.0),
-        }
+        self.next_to_move = self.next_to_move.opposite();
     }
 
     pub fn castle_state(&self, side: Side) -> (bool, bool) {
-        let side_state = self.get_side_state(side);
-        (side_state.king_side_castle, side_state.queen_side_castle)
+        let bcastles = if side == Side::White {
+            self.bboard(BBPiece::WCastles)
+        } else {
+            self.bboard(BBPiece::BCastles)
+        };
+
+        (bcastles & 1 > 0, bcastles & 2 > 0)
+    }
+
+    pub fn set_en_passant(&mut self, en_passant: BBoard) {
+        if en_passant < 1u64 << 16 {
+            *self.bboard_mut(BBPiece::WEnPassant) = en_passant;
+        } else {
+            *self.bboard_mut(BBPiece::BEnPassant) = en_passant;
+        }
     }
 
     pub fn set_castle_state(&mut self, side: Side, state: (bool, bool)) {
-        let side_state = self.get_mut_side_state(side);
-        side_state.set_castle_state(state);
+        let new_state: BBoard = 0;
+        if state.0 {new_state += 1};
+        if state.1 {new_state += 2};
+
+        if side == Side::White {
+            *self.bboard_mut(BBPiece::WCastles) = new_state;
+        } else {
+            *self.bboard_mut(BBPiece::BCastles) = new_state;
+        };
+
+    }
+
+    pub fn set_king_side_castle(&mut self, side: Side, value: bool) {
+        let new_state = 0;
+        if value {new_state += 1};
+
+        if side == Side::White {
+            *self.bboard_mut(BBPiece::WCastles) = new_state;
+        } else {
+            *self.bboard_mut(BBPiece::BCastles) = new_state;
+        };
+    }
+
+    pub fn set_queen_side_castle(&mut self, side: Side, value: bool) {
+        let new_state = 0;
+        if value {new_state += 2};
+
+        if side == Side::White {
+            *self.bboard_mut(BBPiece::WCastles) = new_state;
+        } else {
+            *self.bboard_mut(BBPiece::BCastles) = new_state;
+        };
     }
 
     pub fn to_fen(&self) -> String {
         let mut board = ['.'; 64];
 
-        for piece in Piece::values().iter() {
-            for side in [Side::White, Side::Black].iter() {
-                let coord = (*piece, *side);
-                let bit_board = self.get_board(&coord);
+        for piece in BBPiece::get_pieces() {
+            let bit_board = self.bboards[piece.idx()];
+            let c = piece.to_char();
 
-                let c = piece.to_char(*side);
-
-                for i in 0..64 {
-                    if (bit_board >> i) & 1 == 1 {
-                        board[i] = c;
-                    }
+            for i in 0..64 {
+                if (bit_board >> i) & 1 == 1 {
+                    board[i] = c;
                 }
             }
         }
@@ -428,7 +435,7 @@ impl ChessState {
     }
 
     pub fn en_passant_string(&self) -> String {
-        bb_to_coord(self.en_passant)
+        bb_to_coord(self.bboard(BBPiece::BEnPassant) | self.bboard(BBPiece::WEnPassant))
     }
 
     pub fn from_fen(fen: &str) -> ChessState {
@@ -454,7 +461,9 @@ impl ChessState {
                     idx += (*c - b'0') as u32;
                     continue;
                 } else if b"PpRrNnBbQqKk".contains(c) {
-                    let board: &mut BBoard = state.get_mut_board(&Piece::from_byte(&c));
+                    let p = BBPiece::from_byte(c);
+
+                    let board: & mut BBoard = state.bboard_mut(p);
 
                     add_bit(board, x, y);
                 } else {
@@ -483,12 +492,9 @@ impl ChessState {
                 }
             }
 
-            state
-                .get_mut_side_state(Side::White)
-                .set_castle_state((wk, wq));
-            state
-                .get_mut_side_state(Side::Black)
-                .set_castle_state((bk, bq));
+            state.set_castle_state(Side::White, (wk, wq));
+            state.set_castle_state(Side::Black, (bk, bq));
+
         }
 
         if let Some(en_passant) = split.get(3) {
@@ -498,7 +504,9 @@ impl ChessState {
                 let y = bytes[1];
 
                 let idx = (y - b'1') as u64 * 8 + (x - b'a') as u64;
-                state.en_passant = 1u64 << idx;
+                let bb_en_passant = 1u64 << idx;
+
+                state.set_en_passant(bb_en_passant);
             }
         }
 
@@ -510,242 +518,32 @@ impl ChessState {
             state.full_move_count = moves.parse().unwrap();
         }
 
-        state.black_state.update();
-        state.white_state.update();
-
         state
     }
 
-    pub fn get_move(&self, new_state: &ChessState) -> ChessMove {
-        let next_to_move = self.next_to_move;
-
-        let old_this = self.get_side_state(next_to_move);
-        let old_other = self.get_side_state(next_to_move.opposite());
-        let new_this = new_state.get_side_state(next_to_move);
-        let new_other = new_state.get_side_state(next_to_move.opposite());
-
-        let mut captured: Option<Piece> = None;
-        let mut move_from: BBoard = 0;
-
-        let mut move_to: BBoard = 0;
-        let mut promote_to: Option<Piece> = None;
-
-        let mut role: Option<Piece> = None;
-
-        let mut is_castle = false;
-
-        for p in Piece::values().iter() {
-            let old_board = old_this.get_board(*p);
-            let new_board = new_this.get_board(*p);
-            let delta = old_board ^ new_board;
-
-            if delta.count_ones() == 2 && role.is_some() {
-                // this must be castling
-                is_castle = true;
-            }
-
-            if delta.count_ones() > 0 {
-                if old_board & delta > 0 {
-                    move_from = old_board & delta;
-                    role = Some(*p);
-                }
-
-                if new_board & delta > 0 {
-                    move_to = new_board & delta;
-                    promote_to = Some(*p);
-                }
-            }
-
-            let old_other_board = old_other.get_board(*p);
-            let new_other_board = new_other.get_board(*p);
-
-            if (old_other_board ^ new_other_board).count_ones() == 1 {
-                captured = Some(*p);
-            }
-        }
-
-        if promote_to == role {
-            promote_to = None;
-        }
-
-        if move_from == 0 || move_to == 0 {
-            send_message("# Could not find the moving piece. Engine in panic!");
-
-            println!("========found -> new ===============");
-            self.demo();
-            new_state.demo();
-
-            println!("=======================");
-
-            panic!();
-        }
-
-        if is_castle {
-            let castle_side = if move_from > move_to {
-                Piece::King
-            } else {
-                Piece::Queen
-            };
-
-            let (king_from, rook_from, _, _, king_move, rook_move) =
-                castle_tuple_k_r_e_na_km_rm(next_to_move, castle_side);
-
-            let king_to = king_from ^ king_move;
-            let rook_to = rook_from ^ rook_move;
-
-            let result = ChessMove::Castle {
-                side: next_to_move,
-                king_from: ChessCoord::from_bboard(king_from),
-                king_to: ChessCoord::from_bboard(king_to),
-                rook_from: ChessCoord::from_bboard(rook_from),
-                rook_to: ChessCoord::from_bboard(rook_to),
-            };
-
-            return result;
-        }
-
-        let role = role.unwrap();
-
-        if role == Piece::Pawn && move_to == self.en_passant {
-            let captured = if self.en_passant < 1u64 << 32 {
-                self.en_passant << 8u64
-            } else {
-                self.en_passant >> 8u64
-            };
-
-            return ChessMove::EnPassantCapture {
-                side: next_to_move,
-                move_from: ChessCoord::from_bboard(move_from),
-                move_to: ChessCoord::from_bboard(move_to),
-                captured: ChessCoord::from_bboard(captured),
-            };
-        }
-
-        ChessMove::Normal {
-            side: next_to_move,
-            role,
-            move_from: ChessCoord::from_bboard(move_from),
-            move_to: ChessCoord::from_bboard(move_to),
-            promote: promote_to,
-            capture: captured,
-        }
-    }
-
-    /// Mutate object state to a new value based on a move provided
-    pub fn do_move(&mut self, chess_move: &ChessMove) {
-        let mut new_state = self.init_next_move();
-
-        match chess_move {
-            ChessMove::Normal {
-                side,
-                role,
-                move_from,
-                move_to,
-                promote,
-                capture,
-            } => {
-                if *role == Piece::Pawn || capture.is_some() {
-                    new_state.half_move_count = 0;
-                }
-
-                if *role == Piece::Pawn
-                    && ((*move_from).y + 2 == (*move_to).y || (*move_from).y == (*move_to).y + 2)
-                {
-                    new_state.en_passant =
-                        bb_coord((*move_from).x, ((*move_from).y + (*move_to).y) / 2);
-                }
-
-                let (mut side1, mut side2) = new_state.get_mut_sides_state(*side);
-
-                let board: &mut BBoard = side1.get_mut_board(*role);
-
-                *board ^= move_from.as_bboard();
-
-                if let Some(captured) = capture {
-                    let b_captured = side2.get_mut_board(*captured);
-                    *b_captured &= !move_to.as_bboard();
-                    side2.all &= !move_to.as_bboard();
-                }
-
-                match promote {
-                    Some(new_piece) => {
-                        let board = side1.get_mut_board(*new_piece);
-                        *board ^= move_to.as_bboard();
-                    }
-                    None => {
-                        *board ^= move_to.as_bboard();
-                    }
-                }
-
-                side1.all &= !move_from.as_bboard();
-                side1.all |= move_to.as_bboard();
-            }
-            ChessMove::Castle {
-                side,
-                king_from,
-                king_to,
-                rook_from,
-                rook_to,
-            } => {
-                let (mut side1, _) = new_state.get_mut_sides_state(*side);
-
-                let delta_king = king_from.as_bboard() | king_to.as_bboard();
-                let delta_rook = rook_from.as_bboard() | rook_to.as_bboard();
-                *side1.get_mut_board(Piece::King) ^= delta_king;
-                *side1.get_mut_board(Piece::Rook) ^= delta_rook;
-                side1.all ^= delta_king | delta_rook;
-            }
-            ChessMove::EnPassantCapture {
-                side,
-                move_from,
-                move_to,
-                captured,
-            } => {
-                new_state.half_move_count = 0;
-                let (mut side1, mut side2) = new_state.get_mut_sides_state(*side);
-                let pawns1: &mut BBoard = side1.get_mut_board(Piece::Pawn);
-                let pawns2: &mut BBoard = side2.get_mut_board(Piece::Pawn);
-
-                let delta_pawn = move_from.as_bboard() | move_to.as_bboard();
-                let pawn_capture = captured.as_bboard();
-
-                *pawns1 ^= delta_pawn;
-                side1.all ^= delta_pawn;
-                *pawns2 ^= pawn_capture;
-                side2.all ^= pawn_capture;
-            }
-        }
-
-        update_castles(&mut new_state, self.next_to_move);
-        update_castles(&mut new_state, self.next_to_move.opposite());
-
-        *self = new_state;
-    }
 }
 
 impl Demo for ChessState {
+
     fn demo(&self) {
         println!("{}", self.to_fen());
 
         let mut result = ['.'; 64];
 
-        for piece in Piece::values().iter() {
-            for side in [Side::White, Side::Black].iter() {
-                let coord = (*piece, *side);
-                let board = self.get_board(&coord);
+        for piece in BBPiece::get_pieces() {
 
-                let c = piece.to_char(*side);
+            let board = self.bboard(piece);
+            let c = piece.to_char();
 
-                for i in 0..64 {
-                    if (board >> i) & 1 == 1 {
-                        if result[i] != '.' {
-                            println!(
-                                "board conflict between {} and {} at index {}",
-                                result[i], c, i
-                            );
-                        }
-                        result[i] = c;
+            for i in 0..64 {
+                if (board >> i) & 1 == 1 {
+                    if result[i] != '.' {
+                        println!(
+                            "board conflict between {} and {} at index {}",
+                            result[i], c, i
+                        );
                     }
+                    result[i] = c;
                 }
             }
         }
@@ -802,20 +600,13 @@ mod tests {
     fn test_mut_board() {
         let mut state = ChessState::from_fen("8/8/8/8/8/8/8/8 w - -");
 
-        let (side1, _) = state.get_mut_sides_state(Side::White);
-
-        let b = side1.get_mut_board(Piece::Pawn);
+        let b = state.bboard_mut(BBPiece::WPawn);
         assert_eq!(*b, 0u64);
 
         *b ^= 1;
 
-        let b = side1.get_mut_board(Piece::Pawn);
+        let b = state.bboard_mut(BBPiece::WPawn);
         assert_eq!(*b, 1u64);
     }
 
-    #[test]
-    fn test_enum_index() {
-        let a = Piece::Queen;
-        println!("{}", a.idx());
-    }
 }

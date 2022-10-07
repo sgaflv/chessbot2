@@ -117,48 +117,38 @@ impl Demo for Scores {
 pub fn evaluate_position(state: &ChessState) -> i32 {
     let mut w = 0i32;
     let mut b = 0i32;
+    let mut total = 0i32;
 
-    let bside = state.get_side_state(Side::Black);
-    let wside = state.get_side_state(Side::White);
+    for piece in BBPiece::get_pieces() {
+        let bboard = state.bboard(piece);
+        
+        let ones = bboard.count_ones() as i32;
 
-    let mut piece_it = PIECES.iter();
+        w += ones * piece.value();
+        total += ones * piece.value().abs();
 
-    // rook
-    let p = piece_it.next().unwrap();
-    b += bside.get_board(*p).count_ones() as i32 * p.value();
-    w += wside.get_board(*p).count_ones() as i32 * p.value();
-
-    // queen
-    let p = piece_it.next().unwrap();
-    b += bside.get_board(*p).count_ones() as i32 * p.value();
-    w += wside.get_board(*p).count_ones() as i32 * p.value();
-
-    let is_end_game = b + w < 1800;
-
-    // rest of the figures
-    for p in piece_it {
-        b += bside.get_board(*p).count_ones() as i32 * p.value();
-        w += wside.get_board(*p).count_ones() as i32 * p.value();
     }
 
-    b += position_to_score(&B_PAWN, bside.get_board(Piece::Pawn));
-    b += position_to_score(&B_BISHOP, bside.get_board(Piece::Bishop));
-    b += position_to_score(&B_KNIGHT, bside.get_board(Piece::Knight));
-    b += position_to_score(&B_QUEEN, bside.get_board(Piece::Queen));
-    b += position_to_score(&B_ROOK, bside.get_board(Piece::Rook));
+    let is_end_game = total < 1800;
 
-    w += position_to_score(&W_PAWN, wside.get_board(Piece::Pawn));
-    w += position_to_score(&W_BISHOP, wside.get_board(Piece::Bishop));
-    w += position_to_score(&W_KNIGHT, wside.get_board(Piece::Knight));
-    w += position_to_score(&W_QUEEN, wside.get_board(Piece::Queen));
-    w += position_to_score(&W_ROOK, wside.get_board(Piece::Rook));
+    b += position_to_score(&B_PAWN, state.bboard(BBPiece::BPawn));
+    b += position_to_score(&B_BISHOP, state.bboard(BBPiece::BBishop));
+    b += position_to_score(&B_KNIGHT, state.bboard(BBPiece::BKnight));
+    b += position_to_score(&B_QUEEN, state.bboard(BBPiece::BQueen));
+    b += position_to_score(&B_ROOK, state.bboard(BBPiece::BRook));
+
+    w += position_to_score(&W_PAWN, state.bboard(BBPiece::WPawn));
+    w += position_to_score(&W_BISHOP, state.bboard(BBPiece::WBishop));
+    w += position_to_score(&W_KNIGHT, state.bboard(BBPiece::WKnight));
+    w += position_to_score(&W_QUEEN, state.bboard(BBPiece::WQueen));
+    w += position_to_score(&W_ROOK, state.bboard(BBPiece::WRook));
 
     if is_end_game {
-        b += position_to_score(&B_KING_END, bside.get_board(Piece::King));
-        w += position_to_score(&W_KING_END, wside.get_board(Piece::King));
+        b += position_to_score(&B_KING_END, state.bboard(BBPiece::BKing));
+        w += position_to_score(&W_KING_END, state.bboard(BBPiece::WKing));
     } else {
-        b += position_to_score(&B_KING, bside.get_board(Piece::King));
-        w += position_to_score(&W_KING, wside.get_board(Piece::King));
+        b += position_to_score(&B_KING, state.bboard(BBPiece::BKing));
+        w += position_to_score(&W_KING, state.bboard(BBPiece::WKing));
     }
 
     w - b

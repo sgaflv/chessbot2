@@ -1,16 +1,24 @@
-use std::collections::HashMap;
+
 use std::num::Wrapping;
 use std::result::Result;
 
 use crate::bboard::BBoard;
-use crate::common::castle_tuple_k_r_e_na_km_rm;
 use crate::engine::ChessEngine;
-use crate::state::{ChessState, Piece, Side};
+use crate::state::{ChessState, BBPiece, CastleSide, Side};
 
 #[derive(Eq, PartialEq, Debug, Clone, Copy)]
 pub struct ChessCoord {
     pub x: u8,
     pub y: u8,
+}
+
+struct CastleInfo {
+    king_pos: BBoard,
+    rook_pos: BBoard,
+    empty: BBoard,
+    no_attack: BBoard,
+    king_move: BBoard,
+    rook_move: BBoard,
 }
 
 impl ChessCoord {
@@ -58,73 +66,154 @@ impl ChessCoord {
     }
 }
 
-#[derive(Eq, PartialEq, Debug, Clone, Copy)]
-pub enum ChessMove {
-    Normal {
-        side: Side,
-        role: Piece,
-        move_from: ChessCoord,
-        move_to: ChessCoord,
-        promote: Option<Piece>,
-        capture: Option<Piece>,
-    },
-    Castle {
-        side: Side,
-        king_from: ChessCoord,
-        king_to: ChessCoord,
-        rook_from: ChessCoord,
-        rook_to: ChessCoord,
-    },
-    EnPassantCapture {
-        side: Side,
-        move_from: ChessCoord,
-        move_to: ChessCoord,
-        captured: ChessCoord,
-    },
+#[derive(Eq, PartialEq, Debug, Clone)]
+pub struct ChessMove {
+    pub deltas: Vec<(BBPiece, BBoard)>,
+    side: Side,
+    move_from: BBoard,
+    move_to: BBoard,
+    promote: Option<BBPiece>
 }
 
 impl ChessMove {
+    pub fn new(side: Side, move_from: BBoard, move_to: BBoard, promote: Option<BBPiece>) -> ChessMove {
+        return ChessMove {
+            deltas: Vec::new(),            
+            side,
+            move_from,
+            move_to,
+            promote,
+        };
+    }
+
+    pub fn add_delta(&mut self, piece: BBPiece, delta: BBoard) {
+        self.deltas.push((piece, delta));
+    }
+
+    /// return tuple with bitboards:
+    /// king, rook, empty, no_attack, king_move, rook_move
+    #[inline]
+    pub fn castle_tuple_k_r_e_na_km_rm(
+        kingMove: BBoard
+    ) -> (BBoard, BBoard, BBoard, BBoard, BBoard, BBoard) {
+
+        let w_k = (
+            0b00010000u64,
+            0b10000000u64,
+            0b01100000u64,
+            0b01110000u64,
+            0b01010000u64,
+            0b10100000u64,
+        );
+
+        let w_q = (
+            0b00010000u64, 
+            0b00000001u64, 
+            0b00001110u64, 
+            0b00011100u64,
+            0b00010100u64, 
+            0b00001001u64,
+        );
+
+        let b_k = (
+            0b00001000u64.reverse_bits(),
+            0b00000001u64.reverse_bits(),
+            0b00000110u64.reverse_bits(),
+            0b00001110u64.reverse_bits(),
+            0b00001010u64.reverse_bits(),
+            0b00000101u64.reverse_bits(),
+        );
+
+        let b_q = (
+            0b00001000u64.reverse_bits(),
+            0b10000000u64.reverse_bits(),
+            0b01110000u64.reverse_bits(),
+            0b00111000u64.reverse_bits(),
+            0b00101000u64.reverse_bits(),
+            0b10010000u64.reverse_bits(),
+        );
+
+        let result = match kingMove {
+            0b01010000u64 => w_k,
+            0b00010100u64 => w_q,
+            0b0000101000000000000000000000000000000000000000000000000000000000u64 => b_k,
+            0b0010100000000000000000000000000000000000000000000000000000000000u64 => b_q,
+            _ => panic!(),
+        };
+
+        result
+    }
+
+    pub fn prepare_castle(&mut self, piece: BBPiece, kingDelta: BBoard) {
+        self.add_delta(piece, kingDelta);
+
+        let rookDelta = (kingDelta << 1 | kingDelta >> 1) ^ kingDelta;
+
+        if piece.get_side() == Side::White {
+
+        }
+    }
+
     pub fn parse(move_str: &str, curr_state: &ChessState) -> Result<ChessMove, String> {
         let from_str = &move_str.as_bytes()[0..2];
         let to_str = &move_str.as_bytes()[2..4];
-        let promo = &move_str.as_bytes().get(4);
 
-        let promote = promo.map(|i| {
-            let (p, _) = Piece::from_byte(i);
-            p
-        });
+        let promoString = &move_str.as_bytes().get(4);
+
+        let promote = 
+            if let Some(promoChar) = promoString {
+                Some(BBPiece::from_byte(promoChar))
+            } else {
+                None
+            };
 
         let move_from = ChessCoord::from_string(from_str);
         let move_to = ChessCoord::from_string(to_str);
+
         let side = curr_state.next_to_move;
 
         let move_from_b = move_from.as_bboard();
         let move_to_b = move_to.as_bboard();
 
-        let this_side_state = curr_state.get_side_state(side);
-        let other_side_state = curr_state.get_side_state(side.opposite());
-        let mut role: Option<Piece> = None;
-        let mut capture: Option<Piece> = None;
+        let mut role: Option<BBPiece> = None;
+        let mut capture: Option<BBPiece> = None;
 
         let mut is_castle = false;
 
-        for p in Piece::values().iter() {
-            let own_board = move_from_b & this_side_state.get_board(*p);
+        let mut result = ChessMove::new(side, move_from_b, move_to_b, promote);
 
-            if own_board > 0 {
-                role = Some(*p);
+        result.promote = promote;
 
-                if *p == Piece::King
+        for p in BBPiece::get_pieces() {
+
+            let board_from = move_from_b & curr_state.bboard(p);
+
+            let board_to = move_to_b & curr_state.bboard(p);
+
+            if (board_from > 0) && (p.get_side() == side) {
+                role = Some(p);
+                
+                result.add_delta(p, move_from_b ^ move_to_b);
+
+                if (p == BBPiece::WKing || p == BBPiece::BKing)
                     && (Wrapping(move_to_b) << 2 == Wrapping(move_from_b)
                         || Wrapping(move_to_b) >> 2 == Wrapping(move_from_b))
                 {
                     is_castle = true;
+                    
                 }
             }
 
-            let other_board = move_to_b & other_side_state.get_board(*p);
-            if other_board > 0 {
-                capture = Some(*p);
+            if board_to > 0 {
+                capture = Some(p);
+                
+                result.add_delta(p, move_to_b);
+            }
+        }
+
+        if let Some(cap) = capture {
+            if cap.get_side() == side {
+                role = None;
             }
         }
 
@@ -135,85 +224,47 @@ impl ChessMove {
 
         let role = role.unwrap();
 
-        if role == Piece::Pawn && move_to_b == curr_state.en_passant {
-            let captured = if curr_state.en_passant < 1u64 << 32 {
-                curr_state.en_passant << 8u64
-            } else {
-                curr_state.en_passant >> 8u64
-            };
+        if role == BBPiece::WPawn && move_to_b == curr_state.bboard(BBPiece::BEnPassant) {
+            result.add_delta(BBPiece::BPawn, move_to_b << 8u64);
 
-            return Ok(ChessMove::EnPassantCapture {
-                side,
-                move_from,
-                move_to,
-                captured: ChessCoord::from_bboard(captured),
-            });
+            return Ok(result);
+        }
+
+        if role == BBPiece::BPawn && move_to_b == curr_state.bboard(BBPiece::WEnPassant) {
+            result.add_delta(BBPiece::WPawn, move_to_b >> 8u64);
+
+            return Ok(result);
         }
 
         if is_castle {
             let castle_side = if move_from_b < move_to_b {
-                Piece::King
+                CastleSide::King
             } else {
-                Piece::Queen
+                CastleSide::Queen
             };
 
-            let (king_from, rook_from, _, _, king_move, rook_move) =
-                castle_tuple_k_r_e_na_km_rm(side, castle_side);
-
-            let king_to = king_from ^ king_move;
-            let rook_to = rook_from ^ rook_move;
-
-            return Ok(ChessMove::Castle {
-                side,
-                king_from: ChessCoord::from_bboard(king_from),
-                king_to: ChessCoord::from_bboard(king_to),
-                rook_from: ChessCoord::from_bboard(rook_from),
-                rook_to: ChessCoord::from_bboard(rook_to),
-            });
+            let (_, _, _, _, _, rook_move) =
+                Self::castle_tuple_k_r_e_na_km_rm(move_from_b | move_to_b);
+                
+            if side == Side::White {
+                result.add_delta(BBPiece::WRook, rook_move);
+            } else {
+                result.add_delta(BBPiece::BRook, rook_move);
+            }
+            
         }
 
-        Ok(ChessMove::Normal {
-            side,
-            role,
-            move_from,
-            move_to,
-            promote,
-            capture,
-        })
+        Ok(result)
     }
 
     pub fn to_string(&self) -> String {
         let mut result = String::with_capacity(4);
 
-        match self {
-            ChessMove::Normal {
-                move_from: from,
-                move_to: to,
-                promote,
-                ..
-            } => {
-                result.push_str(from.to_string().as_str());
-                result.push_str(to.to_string().as_str());
-                if let Some(promoted) = promote {
-                    result.push(promoted.to_char(Side::Black));
-                }
-            }
-            ChessMove::Castle {
-                king_from: from,
-                king_to: to,
-                ..
-            } => {
-                result.push_str(from.to_string().as_str());
-                result.push_str(to.to_string().as_str());
-            }
-            ChessMove::EnPassantCapture {
-                move_from: from,
-                move_to: to,
-                ..
-            } => {
-                result.push_str(from.to_string().as_str());
-                result.push_str(to.to_string().as_str());
-            }
+        result.push_str(self.move_from.to_string().as_str());
+        result.push_str(self.move_from.to_string().as_str());
+        
+        if let Some(promoted) = self.promote {
+            result.push(promoted.to_char());
         }
 
         result
@@ -224,7 +275,7 @@ pub struct GameSetup {
     pub xboard: bool,
     pub pondering: bool,
 
-    pub computer_player: HashMap<Side, bool>,
+    pub computer_player: [bool; 2],
 
     pub time: i32,
     pub otime: i32,
@@ -242,7 +293,7 @@ impl GameSetup {
         let mut result = GameSetup {
             xboard: false,
             pondering: false,
-            computer_player: HashMap::new(),
+            computer_player: [false, false],
             time: 0,
             otime: 0,
             moves_left: 0,
@@ -250,9 +301,6 @@ impl GameSetup {
             game_state: ChessState::new_game(),
             engine: ChessEngine::new(),
         };
-
-        result.computer_player.insert(Side::White, false);
-        result.computer_player.insert(Side::Black, false);
 
         result
     }

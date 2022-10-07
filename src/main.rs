@@ -102,8 +102,8 @@ fn main() {
 
             "new" => {
                 setup.game_state = ChessState::new_game();
-                setup.computer_player.insert(Side::White, false);
-                setup.computer_player.insert(Side::Black, false);
+                setup.computer_player[0] = false;
+                setup.computer_player[1] = false;
                 setup.forced = false;
             }
 
@@ -113,8 +113,8 @@ fn main() {
 
             "force" => {
                 // stop computer from making new moves
-                setup.computer_player.insert(Side::White, false);
-                setup.computer_player.insert(Side::Black, true);
+                setup.computer_player[0] = false;
+                setup.computer_player[1] = true;
                 setup.forced = true;
             }
 
@@ -139,16 +139,15 @@ fn main() {
 
                 match user_move {
                     Ok(user_move) => {
+
                         setup
-                            .computer_player
-                            .insert(setup.game_state.next_to_move, false);
+                            .computer_player[setup.game_state.next_to_move.idx()] = false;
 
                         setup.game_state.do_move(&user_move);
 
                         // now computer moves as the opposite color
                         setup
-                            .computer_player
-                            .insert(setup.game_state.next_to_move, true);
+                        .computer_player[setup.game_state.next_to_move.idx()] = true;
 
                         setup.forced = false;
                         info!("parsed user move {:?}", user_move);
@@ -175,8 +174,8 @@ fn main() {
                 };
 
                 setup
-                    .computer_player
-                    .insert(setup.game_state.next_to_move, true);
+                .computer_player[setup.game_state.next_to_move.idx()] = false;
+                
                 setup.forced = false;
             }
 
@@ -194,15 +193,13 @@ fn main() {
         }
 
         let do_move = setup
-            .computer_player
-            .get(&setup.game_state.next_to_move)
-            .unwrap();
+            .computer_player[setup.game_state.next_to_move.idx()];
 
         if !do_move {
             continue;
         }
 
-        let next_move = setup.engine.find_best_move(&setup.game_state);
+        let next_move = setup.engine.find_best_move(&mut setup.game_state);
 
         if next_move.is_none() {
             setup.forced = true;
