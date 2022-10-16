@@ -1,7 +1,7 @@
 use std::num::Wrapping;
 use std::rc::Rc;
 
-use crate::bboard::{bb_to_coord, BBoard, last_bit, remove_last_bit};
+use crate::bboard::*;
 use crate::debug::*;
 use crate::game_setup::*;
 use crate::magic::Magic;
@@ -100,6 +100,7 @@ impl MoveGenerator {
             if !self.is_king_hit(state, &new_move) {
                 moves.push(new_move);
             }
+
             move_candidates ^= move_to;
         }
     }
@@ -280,16 +281,6 @@ impl MoveGenerator {
         false
     }
 
-    /// Function generates all possible moves and returns them as a vector
-    /// of ChessMove objects
-    pub fn generate_moves2(&self, state: &mut ChessState) -> Vec<ChessMove> {
-        let mut moves: Vec<ChessMove> = Vec::with_capacity(20);
-
-        self.generate_moves(state, &mut moves);
-
-        moves
-    }
-
     /// Function generates all possible moves from a given position, and fills them
     /// to the `moves` array. It returns the number of unique correct moves generated.
     pub fn generate_moves(&self, state: &mut ChessState, moves: &mut Vec<ChessMove>) {
@@ -405,22 +396,6 @@ mod tests {
 
         move_generator.generate_moves(state, &mut new_moves);
 
-        let chess_moves = move_generator.generate_moves2(state);
-
-        for (idx, alternative) in chess_moves.iter().enumerate() {
-
-            let initial_move = new_moves.get(idx).unwrap();
-
-            if !initial_move.eq(&alternative) {
-                println!("Initial state:");
-                state.demo();
-
-                println!("Expected move: {:?}", initial_move);
-                println!("Found move:    {:?}", alternative);
-                panic!();
-            }
-        }
-
         for m in new_moves.iter() {
             state.do_move(m);
             result += perft_recursion(move_generator, depth - 1, state);
@@ -471,11 +446,7 @@ mod tests {
 
     #[test]
     fn test_moves1() {
-        perft_tests(
-            "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq -",
-            &[48, 2039, 97862, 4085603, 193690690],
-        );
-
+        perft_tests("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", &[20, 400, 8902, 197281, 4865609, 119060324]);
     }
 
     #[test]
@@ -569,7 +540,7 @@ fn state_is_sane(state: &mut ChessState, chess_move: &ChessMove) -> bool {
     let mut all2 = 0u64;
 
     for piece in BBPiece::get_pieces() {
-        all2 ^= state.bboard(piece);
+        all2 ^= state.bboard(*piece);
     }
 
     let mut result = true;

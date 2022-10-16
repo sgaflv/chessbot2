@@ -30,6 +30,21 @@ pub fn bb_coord_q(x: i32, y: i32) -> BBoard {
     1u64 << (y * 8 + x) as u64
 }
 
+pub fn bb_print(board: BBoard) {
+    // print board
+    for y in 0..8 {
+        for x in 0..8 {
+            if has_bit(&board, x, 7-y) {
+                print!("*");
+            } else {
+                print!(".");
+            }
+        }
+
+        println!();
+    }
+}
+
 pub fn bb_get_q(board: BBoard, x: i32, y: i32) -> bool {
     if x > 7 || x < 0 {
         return false;

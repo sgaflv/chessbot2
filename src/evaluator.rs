@@ -120,7 +120,7 @@ pub fn evaluate_position(state: &ChessState) -> i32 {
     let mut total = 0i32;
 
     for piece in BBPiece::get_pieces() {
-        let bboard = state.bboard(piece);
+        let bboard = state.bboard(*piece);
         
         let ones = bboard.count_ones() as i32;
 

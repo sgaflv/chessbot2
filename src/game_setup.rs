@@ -2,7 +2,7 @@
 use std::num::Wrapping;
 use std::result::Result;
 
-use crate::bboard::BBoard;
+use crate::bboard::{BBoard, bb_print};
 use crate::engine::ChessEngine;
 use crate::state::{ChessState, BBPiece, Side};
 
@@ -97,10 +97,10 @@ impl ChessMove {
     }
 
     /// return tuple with bitboards:
-    /// king, rook, empty, no_attack, king_move, rook_move
+    /// king, rook, empty, no_attack, king_move_delta, rook_move_delta
     #[inline]
     pub fn castle_tuple_k_r_e_na_km_rm(
-        king_move: BBoard
+        king_move_to: BBoard
     ) -> (BBoard, BBoard, BBoard, BBoard, BBoard, BBoard) {
 
         let w_k = (
@@ -139,18 +139,20 @@ impl ChessMove {
             0b10010000u64.reverse_bits(),
         );
 
-        let result = match king_move {
-            0b01010000u64 => w_k,
-            0b00010100u64 => w_q,
-            0b0000101000000000000000000000000000000000000000000000000000000000u64 => b_k,
-            0b0010100000000000000000000000000000000000000000000000000000000000u64 => b_q,
-            _ => panic!(),
+        let result = match king_move_to {
+            0b01000000u64 => w_k,
+            0b00000100u64 => w_q,
+            0b0000001000000000000000000000000000000000000000000000000000000000u64 => b_k,
+            0b0010000000000000000000000000000000000000000000000000000000000000u64 => b_q,
+            _ => {
+                println!("King move not found!");
+                bb_print(king_move_to);
+                panic!();
+            },
         };
 
         result
     }
-
-
 
     pub fn parse(move_str: &str, curr_state: &ChessState) -> Result<ChessMove, String> {
         let from_str = &move_str.as_bytes()[0..2];
@@ -184,16 +186,16 @@ impl ChessMove {
 
         for p in BBPiece::get_pieces() {
 
-            let board_from = move_from_b & curr_state.bboard(p);
+            let board_from = move_from_b & curr_state.bboard(*p);
 
-            let board_to = move_to_b & curr_state.bboard(p);
+            let board_to = move_to_b & curr_state.bboard(*p);
 
             if (board_from > 0) && (p.get_side() == side) {
-                role = Some(p);
+                role = Some(*p);
                 
-                result.add_delta(p, move_from_b ^ move_to_b);
+                result.add_delta(*p, move_from_b ^ move_to_b);
 
-                if (p == BBPiece::WKing || p == BBPiece::BKing)
+                if (*p == BBPiece::WKing || *p == BBPiece::BKing)
                     && (Wrapping(move_to_b) << 2 == Wrapping(move_from_b)
                         || Wrapping(move_to_b) >> 2 == Wrapping(move_from_b))
                 {
@@ -203,9 +205,9 @@ impl ChessMove {
             }
 
             if board_to > 0 {
-                capture = Some(p);
+                capture = Some(*p);
                 
-                result.add_delta(p, move_to_b);
+                result.add_delta(*p, move_to_b);
             }
         }
 
@@ -237,7 +239,7 @@ impl ChessMove {
         if is_castle {
 
             let (_, _, _, _, _, rook_move) =
-                Self::castle_tuple_k_r_e_na_km_rm(move_from_b | move_to_b);
+                Self::castle_tuple_k_r_e_na_km_rm(move_to_b);
                 
             if side == Side::White {
                 result.add_delta(BBPiece::WRook, rook_move);

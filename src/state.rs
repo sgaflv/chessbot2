@@ -37,6 +37,44 @@ pub enum BBPiece {
 const BBPIECE_MIDDLE: usize = BBPiece::BKing as usize;
 const BBPIECE_COUNT: usize = BBPIECE_MIDDLE * 2;
 
+const BBPIECE_ARRAY: [BBPiece;20] = [
+    BBPiece::WKing,
+    BBPiece::WPawn,
+    BBPiece::WRook,
+    BBPiece::WKnight,
+    BBPiece::WBishop,
+    BBPiece::WQueen,
+    BBPiece::WAll,
+    BBPiece::WAttacks,
+    BBPiece::WCastles,
+    BBPiece::WEnPassant,
+    BBPiece::BKing,
+    BBPiece::BPawn,
+    BBPiece::BRook,
+    BBPiece::BKnight,
+    BBPiece::BBishop,
+    BBPiece::BQueen,
+    BBPiece::BAll,
+    BBPiece::BAttacks,
+    BBPiece::BCastles,
+    BBPiece::BEnPassant
+];
+
+const BBPIECE_PIECES: [BBPiece;12] = [
+    BBPiece::WKing,
+    BBPiece::WPawn,
+    BBPiece::WRook,
+    BBPiece::WKnight,
+    BBPiece::WBishop,
+    BBPiece::WQueen,
+    BBPiece::BKing,
+    BBPiece::BPawn,
+    BBPiece::BRook,
+    BBPiece::BKnight,
+    BBPiece::BBishop,
+    BBPiece::BQueen,
+];
+
 impl BBPiece {
 
     #[inline]
@@ -88,21 +126,18 @@ impl BBPiece {
     }
 
     #[inline]
-    pub fn get_pieces() -> [BBPiece; 12] {
-        [
-            BBPiece::WKing,
-            BBPiece::WPawn,
-            BBPiece::WRook,
-            BBPiece::WKnight,
-            BBPiece::WBishop,
-            BBPiece::WQueen,
-            BBPiece::BKing,
-            BBPiece::BPawn,
-            BBPiece::BRook,
-            BBPiece::BKnight,
-            BBPiece::BBishop,
-            BBPiece::BQueen,
-        ]
+    pub fn from_usize(idx : usize) -> BBPiece {
+        BBPIECE_ARRAY[idx]
+    }
+
+    #[inline]
+    pub fn get_pieces() -> &'static[BBPiece; 12] {
+        &BBPIECE_PIECES
+    }
+
+    #[inline]
+    pub fn get_all() -> &'static[BBPiece; 20] {
+        &BBPIECE_ARRAY
     }
 
     #[inline]
@@ -114,13 +149,20 @@ impl BBPiece {
             BBPiece::WKnight => "Knight".to_string(),
             BBPiece::WBishop  => "Bishop".to_string(),
             BBPiece::WQueen  => "Queen".to_string(),
+            BBPiece::WAll  => "All".to_string(),
+            BBPiece::WAttacks  => "Attacks".to_string(),
+            BBPiece::WCastles  => "Castles".to_string(),
+            BBPiece::WEnPassant  => "EnPassant".to_string(),
             BBPiece::BKing => "king".to_string(),
             BBPiece::BPawn => "pawn".to_string(),
             BBPiece::BRook => "rook".to_string(),
             BBPiece::BKnight => "knigt".to_string(),
             BBPiece::BBishop  => "bishop".to_string(),
             BBPiece::BQueen  => "queen".to_string(),
-            _ => "".to_string(),
+            BBPiece::BAll  => "all".to_string(),
+            BBPiece::BAttacks  => "attacks".to_string(),
+            BBPiece::BCastles  => "castles".to_string(),
+            BBPiece::BEnPassant  => "enPassant".to_string(),
         }
     }
 
@@ -310,6 +352,7 @@ impl ChessState {
             }
         }
 
+        self.demo();
         panic!("Piece not found at the given position!");
     }
 
@@ -556,9 +599,16 @@ impl ChessState {
                     continue;
                 } else if b"PpRrNnBbQqKk".contains(c) {
                     let p = BBPiece::from_byte(c);
+                    let all = if p.get_side() == Side::White {
+                        BBPiece::WAll
+                    } else {
+                        BBPiece::BAll
+                    };
 
                     let board: & mut BBoard = state.bboard_mut(p);
+                    add_bit(board, x, y);
 
+                    let board: & mut BBoard = state.bboard_mut(all);
                     add_bit(board, x, y);
                 } else {
                     panic!("unrecognized FEN board input: {}", board);
@@ -626,7 +676,7 @@ impl Demo for ChessState {
 
         for piece in BBPiece::get_pieces() {
 
-            let board = self.bboard(piece);
+            let board = self.bboard(*piece);
             let c = piece.to_char();
 
             for i in 0..64 {
@@ -658,7 +708,15 @@ impl Demo for ChessState {
             self.castle_string(),
             self.en_passant_string()
         );
+
+        for piece in BBPiece::get_all() {
+            println!("{}",piece.to_string());
+            bb_print(self.bboard(*piece));
+        }
+
     }
+
+
 }
 
 #[cfg(test)]
