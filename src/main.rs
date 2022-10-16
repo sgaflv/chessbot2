@@ -12,7 +12,6 @@ use crate::game_setup::{ChessMove, GameSetup};
 use crate::messaging::{get_message, send_message};
 
 pub mod bboard;
-pub mod common;
 pub mod debug;
 pub mod engine;
 pub mod evaluator;

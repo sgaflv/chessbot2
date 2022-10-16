@@ -34,6 +34,9 @@ pub enum BBPiece {
     BEnPassant,
 }
 
+const BBPIECE_MIDDLE: usize = BBPiece::BKing as usize;
+const BBPIECE_COUNT: usize = BBPIECE_MIDDLE * 2;
+
 impl BBPiece {
 
     #[inline]
@@ -45,10 +48,10 @@ impl BBPiece {
     pub fn opposite_idx(&self) -> usize {
         let ret = (*self) as usize;
 
-        if ret < BBPiece::BKing as usize { 
-            ret + BBPiece::BKing as usize
+        if ret < BBPIECE_MIDDLE { 
+            ret + BBPIECE_MIDDLE
         } else {
-            ret - BBPiece::BKing as usize
+            ret - BBPIECE_MIDDLE
         }
     }
 
@@ -179,6 +182,23 @@ pub enum Side {
 }
 
 impl Side {
+    #[inline]
+    pub fn offset(&self) -> usize {
+        match self {
+            Side::White => 0,
+            Side::Black => BBPIECE_MIDDLE,
+        }
+    }
+
+    #[inline]
+    pub fn offsets(&self) -> (usize, usize) {
+        match self {
+            Side::White => (0, BBPIECE_MIDDLE),
+            Side::Black => (BBPIECE_MIDDLE, 0),
+        }
+    }
+
+    #[inline]
     pub fn idx(&self) -> usize {
         match self {
             Side::White => 0,
@@ -186,6 +206,7 @@ impl Side {
         }
     }
 
+    #[inline]
     pub fn value(&self) -> i32 {
         match self {
             Side::White => 1,
@@ -193,13 +214,12 @@ impl Side {
         }
     }
 
+    #[inline]
     pub fn opposite(&self) -> Side {
-
         match self {
             Side::White => Side::Black,
             Side::Black => Side::White,
         }
-
     }
 
     pub fn from_byte(c: u8) -> Side {
@@ -229,7 +249,7 @@ impl fmt::Display for Side {
 pub struct ChessState {
     pub next_to_move: Side,
 
-    bboards: [BBoard; (BBPiece::BKing as usize) * 2],
+    bboards: [BBoard; BBPIECE_COUNT],
 
     pub half_move_count: u32,
     pub full_move_count: u32,
@@ -239,10 +259,58 @@ impl ChessState {
     pub fn new_empty() -> ChessState {
         ChessState {
             next_to_move: Side::White,
-            bboards: [0u64; (BBPiece::BKing as usize) * 2],
+            bboards: [0u64; BBPIECE_COUNT],
             half_move_count: 0,
             full_move_count: 0,
         }
+    }
+
+    #[inline]
+    pub fn piece_at(&self, move_to: BBoard) -> BBPiece {
+
+        if move_to & self.bboard(BBPiece::WAll) > 0 {
+            if self.bboards[BBPiece::WPawn as usize] & move_to > 0 {
+                return BBPiece::WPawn;
+            }
+            if self.bboards[BBPiece::WRook as usize] & move_to > 0 {
+                return BBPiece::WRook;
+            }
+            if self.bboards[BBPiece::WKnight as usize] & move_to > 0 {
+                return BBPiece::WKnight;
+            }
+            if self.bboards[BBPiece::WBishop as usize] & move_to > 0 {
+                return BBPiece::WBishop;
+            }
+            if self.bboards[BBPiece::WQueen as usize] & move_to > 0 {
+                return BBPiece::WQueen;
+            }
+            if self.bboards[BBPiece::WKing as usize] & move_to > 0 {
+                return BBPiece::WKing;
+            }
+        }
+
+        if move_to & self.bboard(BBPiece::BAll) > 0 {
+            if self.bboards[BBPiece::BPawn as usize] & move_to > 0 {
+                return BBPiece::BPawn;
+            }
+            if self.bboards[BBPiece::BRook as usize] & move_to > 0 {
+                return BBPiece::BRook;
+            }
+            if self.bboards[BBPiece::BKnight as usize] & move_to > 0 {
+                return BBPiece::BKnight;
+            }
+            if self.bboards[BBPiece::BBishop as usize] & move_to > 0 {
+                return BBPiece::BBishop;
+            }
+            if self.bboards[BBPiece::BQueen as usize] & move_to > 0 {
+                return BBPiece::BQueen;
+            }
+            if self.bboards[BBPiece::BKing as usize] & move_to > 0 {
+                return BBPiece::BKing;
+            }
+        }
+
+        panic!("Piece not found at the given position!");
     }
 
     #[inline]
@@ -256,15 +324,6 @@ impl ChessState {
     }
 
     #[inline]
-    pub fn get_offset(side: Side) -> usize {
-        if side == Side::White {
-            0
-        } else {
-            BBPiece::BKing as usize
-        }
-    }
-
-    #[inline]
     pub fn bboard_ofs(&mut self, board: BBPiece, offset: usize) -> BBoard {
         debug_assert!(board.get_side() == Side::White);
         self.bboards[board.idx() + offset]
@@ -275,7 +334,7 @@ impl ChessState {
     }
 
     pub fn do_move(&mut self, chess_move: &ChessMove) {
-        for delta in chess_move.deltas {
+        for delta in chess_move.deltas.iter() {
             *self.bboard_mut(delta.0) ^= delta.1;
         }
 
@@ -289,7 +348,7 @@ impl ChessState {
     }
 
     pub fn undo_move(&mut self, chess_move: &ChessMove) {
-        for delta in chess_move.deltas {
+        for delta in chess_move.deltas.iter() {
             *self.bboard_mut(delta.0) ^= delta.1;
         }
 
@@ -311,6 +370,41 @@ impl ChessState {
         (bcastles & 1 > 0, bcastles & 2 > 0)
     }
 
+    pub fn castle_moves(&self, side: Side) -> (BBoard, BBoard) {
+        let (kcastle, qcastle) = self.castle_state(side);
+
+        if side == Side::White {
+            let king_side_castle = if kcastle {
+                0b01000000u64
+            } else {
+                0u64
+            };
+    
+            let queen_side_castle = if qcastle {
+                0b00000100u64
+            } else {
+                0u64
+            };
+            
+            return (king_side_castle, queen_side_castle);
+        } else {
+            let king_side_castle = if kcastle {
+                0b00000010u64.reverse_bits()
+            } else {
+                0u64
+            };
+    
+            let queen_side_castle = if qcastle {
+                0b00100000u64.reverse_bits()
+            } else {
+                0u64
+            };
+
+            return (king_side_castle, queen_side_castle);   
+        }
+        
+    }
+
     pub fn set_en_passant(&mut self, en_passant: BBoard) {
         if en_passant < 1u64 << 16 {
             *self.bboard_mut(BBPiece::WEnPassant) = en_passant;
@@ -320,7 +414,7 @@ impl ChessState {
     }
 
     pub fn set_castle_state(&mut self, side: Side, state: (bool, bool)) {
-        let new_state: BBoard = 0;
+        let mut new_state: BBoard = 0;
         if state.0 {new_state += 1};
         if state.1 {new_state += 2};
 
@@ -333,7 +427,7 @@ impl ChessState {
     }
 
     pub fn set_king_side_castle(&mut self, side: Side, value: bool) {
-        let new_state = 0;
+        let mut new_state = 0;
         if value {new_state += 1};
 
         if side == Side::White {
@@ -344,7 +438,7 @@ impl ChessState {
     }
 
     pub fn set_queen_side_castle(&mut self, side: Side, value: bool) {
-        let new_state = 0;
+        let mut new_state = 0;
         if value {new_state += 2};
 
         if side == Side::White {

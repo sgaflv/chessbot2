@@ -4,21 +4,12 @@ use std::result::Result;
 
 use crate::bboard::BBoard;
 use crate::engine::ChessEngine;
-use crate::state::{ChessState, BBPiece, CastleSide, Side};
+use crate::state::{ChessState, BBPiece, Side};
 
 #[derive(Eq, PartialEq, Debug, Clone, Copy)]
 pub struct ChessCoord {
     pub x: u8,
     pub y: u8,
-}
-
-struct CastleInfo {
-    king_pos: BBoard,
-    rook_pos: BBoard,
-    empty: BBoard,
-    no_attack: BBoard,
-    king_move: BBoard,
-    rook_move: BBoard,
 }
 
 impl ChessCoord {
@@ -69,10 +60,10 @@ impl ChessCoord {
 #[derive(Eq, PartialEq, Debug, Clone)]
 pub struct ChessMove {
     pub deltas: Vec<(BBPiece, BBoard)>,
-    side: Side,
-    move_from: BBoard,
-    move_to: BBoard,
-    promote: Option<BBPiece>
+    pub side: Side,
+    pub move_from: BBoard,
+    pub move_to: BBoard,
+    pub promote: Option<BBPiece>
 }
 
 impl ChessMove {
@@ -86,7 +77,22 @@ impl ChessMove {
         };
     }
 
+    pub fn get_piece(&self) -> BBPiece {
+
+        for (piece, delta) in self.deltas.iter() {
+            if delta & self.move_from > 0 {
+                return piece.clone();
+            }
+        }
+
+        panic!("Unknown moving piece!");
+    }
+
     pub fn add_delta(&mut self, piece: BBPiece, delta: BBoard) {
+        if delta == 0u64 {
+            return;
+        }
+
         self.deltas.push((piece, delta));
     }
 
@@ -94,7 +100,7 @@ impl ChessMove {
     /// king, rook, empty, no_attack, king_move, rook_move
     #[inline]
     pub fn castle_tuple_k_r_e_na_km_rm(
-        kingMove: BBoard
+        king_move: BBoard
     ) -> (BBoard, BBoard, BBoard, BBoard, BBoard, BBoard) {
 
         let w_k = (
@@ -133,7 +139,7 @@ impl ChessMove {
             0b10010000u64.reverse_bits(),
         );
 
-        let result = match kingMove {
+        let result = match king_move {
             0b01010000u64 => w_k,
             0b00010100u64 => w_q,
             0b0000101000000000000000000000000000000000000000000000000000000000u64 => b_k,
@@ -144,25 +150,17 @@ impl ChessMove {
         result
     }
 
-    pub fn prepare_castle(&mut self, piece: BBPiece, kingDelta: BBoard) {
-        self.add_delta(piece, kingDelta);
 
-        let rookDelta = (kingDelta << 1 | kingDelta >> 1) ^ kingDelta;
-
-        if piece.get_side() == Side::White {
-
-        }
-    }
 
     pub fn parse(move_str: &str, curr_state: &ChessState) -> Result<ChessMove, String> {
         let from_str = &move_str.as_bytes()[0..2];
         let to_str = &move_str.as_bytes()[2..4];
 
-        let promoString = &move_str.as_bytes().get(4);
+        let promo_string = &move_str.as_bytes().get(4);
 
         let promote = 
-            if let Some(promoChar) = promoString {
-                Some(BBPiece::from_byte(promoChar))
+            if let Some(promo_char) = promo_string {
+                Some(BBPiece::from_byte(promo_char))
             } else {
                 None
             };
@@ -237,11 +235,6 @@ impl ChessMove {
         }
 
         if is_castle {
-            let castle_side = if move_from_b < move_to_b {
-                CastleSide::King
-            } else {
-                CastleSide::Queen
-            };
 
             let (_, _, _, _, _, rook_move) =
                 Self::castle_tuple_k_r_e_na_km_rm(move_from_b | move_to_b);
@@ -290,7 +283,7 @@ pub struct GameSetup {
 
 impl GameSetup {
     pub fn new() -> GameSetup {
-        let mut result = GameSetup {
+        let result = GameSetup {
             xboard: false,
             pondering: false,
             computer_player: [false, false],

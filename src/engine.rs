@@ -26,7 +26,10 @@ impl ChessEngine {
         self.move_generator.generate_moves(state, &mut moves);
 
         if moves.len() == 0 {
-            let king_hit = self.move_generator.is_king_hit(state, state.next_to_move);
+
+            let dummy_move = ChessMove::new(state.next_to_move, 0, 0, None);
+
+            let king_hit = self.move_generator.is_king_hit(state, &dummy_move);
 
             return if king_hit {
                 // checkmate
@@ -118,8 +121,8 @@ impl ChessEngine {
 
         info!("min: {}, max: {}, best score: {}", min, max, best_score);
 
-        let next_move = moves[best_index];
+        let next_move = &moves[best_index];
 
-        Some(next_move)
+        Some(next_move.clone())
     }
 }
