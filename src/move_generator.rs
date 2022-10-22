@@ -6,6 +6,7 @@ use crate::debug::*;
 use crate::game_setup::*;
 use crate::magic::Magic;
 use crate::piece_moves::*;
+use crate::state::*;
 use crate::state::{ChessState, BBPiece, Side};
 
 pub struct MoveGenerator {
@@ -41,10 +42,23 @@ impl MoveGenerator {
             (BBPiece::BPawn, BBPiece::WPawn)
         };
 
-        let other_en_passant = state.bboard_ofs(BBPiece::WEnPassant, other_ofs);
+        let (this_en_passant, other_en_passant) = if state.next_to_move == Side::White {
+            (BBPiece::WEnPassant, BBPiece::BEnPassant)
+        } else {
+            (BBPiece::BEnPassant, BBPiece::WEnPassant)
+        };
 
-        let this_all = state.bboard_ofs(BBPiece::WAll, this_ofs);
-        let other_all = state.bboard_ofs(BBPiece::WAll, other_ofs);
+        let (this_all, other_all) = if state.next_to_move == Side::White {
+            (BBPiece::WAll, BBPiece::BAll)
+        } else {
+            (BBPiece::BAll, BBPiece::WAll)
+        };
+
+        let other_en_passant_bb = state.bboard_ofs(BBPiece::WEnPassant, other_ofs);
+
+        let this_all_bb = state.bboard_ofs(BBPiece::WAll, this_ofs);
+        let other_all_bb = state.bboard_ofs(BBPiece::WAll, other_ofs);
+        let all_bb = this_all_bb | other_all_bb;
 
         while move_candidates > 0 {
 
@@ -55,40 +69,67 @@ impl MoveGenerator {
             let move_delta = move_from | (move_to & 0x00ffffffffffff00u64);
 
             new_move.add_delta(this_pawn, move_delta);
+            new_move.add_delta(this_all, move_from | move_to);
+
+
+            match move_to {
+                WKING_SIDE_ROOK  => new_move.add_delta(BBPiece::WKCastle, state.bboard(BBPiece::WKCastle)),
+                WQUEEN_SIDE_ROOK => new_move.add_delta(BBPiece::WQCastle, state.bboard(BBPiece::WQCastle)),
+                BKING_SIDE_ROOK  => new_move.add_delta(BBPiece::BKCastle, state.bboard(BBPiece::BKCastle)),
+                BQUEEN_SIDE_ROOK => new_move.add_delta(BBPiece::BQCastle, state.bboard(BBPiece::BQCastle)),
+                _ => {}
+            }
+
+            // reset enemy en-passant
+            if other_en_passant_bb > 0 {
+                new_move.add_delta(other_en_passant, other_en_passant_bb);
+            }
 
             // en-passant capture
-            if move_to & other_en_passant > 0 {
+            if move_to & other_en_passant_bb > 0 {
                 let capture_target = (move_to << 8) | (move_to >> 8);
                 let other_pawns = state.bboard_ofs(BBPiece::WPawn, other_ofs);
 
                 new_move.add_delta(other_pawn, capture_target & other_pawns);
+                new_move.add_delta(other_all, capture_target & other_pawns);
             }
 
             // create new en-passant
             if (move_from & 0x00ff00000000ff00u64) > 0u64 && (move_to & 0x000000ffff000000u64) > 0u64 {
-                let this_en_passant = ((move_to << 8) | (move_to >> 8)) & ((move_from << 8) | (move_from >> 8));
+                let this_en_passant_bb = ((move_to << 8) | (move_to >> 8)) & ((move_from << 8) | (move_from >> 8));
 
-                if this_en_passant & (this_all | other_all) == 0 {
-                    new_move.add_delta(this_pawn, this_en_passant);
+                if this_en_passant_bb & all_bb == 0 {
+                    new_move.add_delta(this_en_passant, this_en_passant_bb);
+                } else {
+                    // en-passant move is blocked, hence continue without adding it
+                    move_candidates ^= move_to;
+                    continue;
                 }
             }
 
             // pawn captures
-            if other_all & move_to > 0 {
+            if other_all_bb & move_to > 0 {
                 new_move.add_delta(state.piece_at(move_to), move_to);
+                new_move.add_delta(other_all, move_to);
             }
 
             // promotions
             if move_to & 0xff000000000000ffu64 > 0 {
 
-                for p in [BBPiece::WRook, BBPiece::WKnight, BBPiece::WBishop, BBPiece::WQueen].iter() {
-                   
+                let promotions = if this_ofs == 0 {
+                    [BBPiece::WRook, BBPiece::WKnight, BBPiece::WBishop, BBPiece::WQueen]
+                } else {
+                    [BBPiece::BRook, BBPiece::BKnight, BBPiece::BBishop, BBPiece::BQueen]
+                };
+
+                for p in promotions.iter() {
+                    
                     let mut new_move = new_move.clone();
 
                     new_move.add_delta(*p, move_to);
 
                     if !self.is_king_hit(state, &new_move) {
-
+                        debug_assert!(state_is_sane(state, &new_move));
                         moves.push(new_move);
                     }
                 }
@@ -98,6 +139,7 @@ impl MoveGenerator {
             }
 
             if !self.is_king_hit(state, &new_move) {
+                debug_assert!(state_is_sane(state, &new_move));
                 moves.push(new_move);
             }
 
@@ -115,16 +157,23 @@ impl MoveGenerator {
     ) {
         let mut move_candidates = move_candidates;
 
-        let (_, other_ofs) = state.next_to_move.offsets();
+        let (_this_ofs, other_ofs) = state.next_to_move.offsets();
 
-        let (_, other_all) = if state.next_to_move == Side::White {
+        let (this_all, other_all) = if state.next_to_move == Side::White {
             (BBPiece::WAll, BBPiece::BAll)
         } else {
             (BBPiece::BAll, BBPiece::WAll)
         };
+
+
+        let (_this_en_passant, other_en_passant) = if state.next_to_move == Side::White {
+            (BBPiece::WEnPassant, BBPiece::BEnPassant)
+        } else {
+            (BBPiece::BEnPassant, BBPiece::WEnPassant)
+        };
         
         let other_all_bb = state.bboard_ofs(BBPiece::WAll, other_ofs);
-
+        let other_en_passant_bb = state.bboard_ofs(BBPiece::WEnPassant, other_ofs);
 
         while move_candidates > 0 {
             let move_to = move_candidates & (-Wrapping(move_candidates)).0;
@@ -133,16 +182,48 @@ impl MoveGenerator {
 
             let mut new_move = ChessMove::new(state.next_to_move, move_from, move_to, None);
 
+            // disable castle states
+            match move_from {
+                WKING_SIDE_ROOK  => new_move.add_delta(BBPiece::WKCastle, state.bboard(BBPiece::WKCastle)),
+                WQUEEN_SIDE_ROOK => new_move.add_delta(BBPiece::WQCastle, state.bboard(BBPiece::WQCastle)),
+                BKING_SIDE_ROOK  => new_move.add_delta(BBPiece::BKCastle, state.bboard(BBPiece::BKCastle)),
+                BQUEEN_SIDE_ROOK => new_move.add_delta(BBPiece::BQCastle, state.bboard(BBPiece::BQCastle)),
+                _ => {}
+            }
+
+            match move_to {
+                WKING_SIDE_ROOK  => new_move.add_delta(BBPiece::WKCastle, state.bboard(BBPiece::WKCastle)),
+                WQUEEN_SIDE_ROOK => new_move.add_delta(BBPiece::WQCastle, state.bboard(BBPiece::WQCastle)),
+                BKING_SIDE_ROOK  => new_move.add_delta(BBPiece::BKCastle, state.bboard(BBPiece::BKCastle)),
+                BQUEEN_SIDE_ROOK => new_move.add_delta(BBPiece::BQCastle, state.bboard(BBPiece::BQCastle)),
+                _ => {}
+            }
+
+            if piece == BBPiece::WKing {
+                new_move.add_delta(BBPiece::WKCastle, state.bboard(BBPiece::WKCastle));
+                new_move.add_delta(BBPiece::WQCastle, state.bboard(BBPiece::WQCastle));
+            }
+
+            if piece == BBPiece::BKing {
+                new_move.add_delta(BBPiece::BKCastle, state.bboard(BBPiece::BKCastle));
+                new_move.add_delta(BBPiece::BQCastle, state.bboard(BBPiece::BQCastle));
+            }
+
             new_move.add_delta(piece, move_delta);
+            new_move.add_delta(this_all, move_delta);
+            
+            // reset enemy en-passant
+            if other_en_passant_bb > 0 {
+                new_move.add_delta(other_en_passant, other_en_passant_bb);
+            }
 
             if  other_all_bb & move_to > 0 {
                 new_move.add_delta(other_all, move_to);
+                new_move.add_delta(state.piece_at(move_to), move_to);
             }
 
             if !self.is_king_hit(state, &new_move) {
-
                 debug_assert!(state_is_sane(state, &new_move));
-
                 moves.push(new_move);
             }
 
@@ -173,19 +254,27 @@ impl MoveGenerator {
     ) {
         let all = state.bboard(BBPiece::WAll) | state.bboard(BBPiece::BAll);
 
-        let this_ofs = state.next_to_move.offset();
+        let (this_ofs, other_ofs) = state.next_to_move.offsets();
 
-        let (this_king, this_rook, this_castle_piece) = 
+        let (this_king, this_rook, this_all, this_kcastle_piece, this_qcastle_piece) = 
             if state.next_to_move == Side::White {
-                (BBPiece::WKing, BBPiece::WRook, BBPiece::WCastles)
+                (BBPiece::WKing, BBPiece::WRook, BBPiece::WAll, BBPiece::WKCastle, BBPiece::WQCastle)
             } else {
-                (BBPiece::BKing, BBPiece::BRook, BBPiece::WCastles)
+                (BBPiece::BKing, BBPiece::BRook, BBPiece::BAll, BBPiece::BKCastle, BBPiece::BQCastle)
+            };
+
+        let other_en_passant = 
+            if state.next_to_move == Side::White {
+                BBPiece::BEnPassant
+            } else {
+                BBPiece::WEnPassant
             };
 
         let (king, _rook, empty, no_attack, king_move, rook_move) =
             ChessMove::castle_tuple_k_r_e_na_km_rm(king_move);
 
-        if empty & all == 0 && !self.is_any_hit(state, no_attack) {
+        if empty & all == 0 && !self.is_any_hit(state, no_attack, other_ofs) {
+            let other_en_passant_bb = state.bboard_ofs(BBPiece::WEnPassant, other_ofs);
 
             let move_from = king;
             let move_to = king ^ king_move;
@@ -193,7 +282,17 @@ impl MoveGenerator {
 
             new_move.add_delta(this_king, king_move);
             new_move.add_delta(this_rook, rook_move);
-            new_move.add_delta(this_castle_piece, state.bboard_ofs(BBPiece::WCastles, this_ofs));
+            new_move.add_delta(this_all, rook_move | king_move);
+
+            // disable castle states
+            new_move.add_delta(this_kcastle_piece, state.bboard_ofs(BBPiece::WKCastle, this_ofs));
+            new_move.add_delta(this_qcastle_piece, state.bboard_ofs(BBPiece::WQCastle, this_ofs));
+
+            
+            // reset enemy en-passant
+            if other_en_passant_bb > 0 {
+                new_move.add_delta(other_en_passant, other_en_passant_bb);
+            }
 
             debug_assert!(state_is_sane(state, &new_move));
 
@@ -204,30 +303,29 @@ impl MoveGenerator {
     #[inline]
     pub fn is_king_hit(&self, state: &mut ChessState, chess_move: &ChessMove) -> bool {
 
+        let (this_ofs, other_ofs) = state.next_to_move.offsets();
+
         state.do_move(chess_move);
 
-        let offset = state.next_to_move.offset();
+        debug_assert!(state.bboard_ofs(BBPiece::WKing, this_ofs) > 0);
+        let idx = state.bboard_ofs(BBPiece::WKing, this_ofs).trailing_zeros() as usize;
 
-        debug_assert!(state.bboard_ofs(BBPiece::WKing, offset) > 0);
-
-        let idx = state.bboard_ofs(BBPiece::WKing, offset).trailing_zeros() as usize;
-
-        let result = self.is_hit(state, idx);
+        let result = self.is_hit(state, idx, other_ofs);
 
         state.undo_move(chess_move);
 
         result
     }
 
-    #[inline]
-    fn is_any_hit(&self, state: &mut ChessState, check_board: BBoard) -> bool {
+     #[inline]
+     fn is_any_hit(&self, state: &mut ChessState, check_board: BBoard, offset: usize) -> bool {
 
         let mut check_board = check_board;
 
         while check_board > 0 {
             let idx = last_bit(check_board).trailing_zeros() as usize;
 
-            if self.is_hit(state, idx) {
+            if self.is_hit(state, idx, offset) {
                 return true;
             }
 
@@ -236,45 +334,45 @@ impl MoveGenerator {
 
         false
     }
+    
 
     #[inline]
-    fn is_hit(&self, state: &mut ChessState, idx: usize) -> bool {
-
-        let (_, other_ofs) = state.next_to_move.offsets();
+    fn is_hit(&self, state: &mut ChessState, idx: usize, offset: usize) -> bool {
 
         // use opposite pawn color to get source
-        let pawns_capture = if other_ofs == 0 {
-            self.move_provider.white_pawn_capture
-        } else {
+        let pawns_capture = if offset == 0 {
             self.move_provider.black_pawn_capture
+        } else {
+            self.move_provider.white_pawn_capture
         };
 
-        if state.bboard_ofs(BBPiece::WPawn, other_ofs) & pawns_capture[idx] > 0 {
+        if state.bboard_ofs(BBPiece::WPawn, offset) & pawns_capture[idx] > 0 {
             return true;
         }
 
-        if state.bboard_ofs(BBPiece::WKnight, other_ofs) & self.move_provider.knight_move[idx] > 0 {
+        if state.bboard_ofs(BBPiece::WKnight, offset) & self.move_provider.knight_move[idx] > 0 {
             return true;
         }
 
         let all = state.bboard(BBPiece::WAll) | state.bboard(BBPiece::BAll);
+
         let rook_moves = self.magic.get_rook_attack_bits(idx, all);
         let bishop_moves = self.magic.get_bishop_attack_bits(idx, all);
 
-        if state.bboard_ofs(BBPiece::WRook, other_ofs) & rook_moves > 0 {
+        if state.bboard_ofs(BBPiece::WRook, offset) & rook_moves > 0 {
             return true;
         }
 
-        if state.bboard_ofs(BBPiece::WBishop, other_ofs) & bishop_moves > 0 {
+        if state.bboard_ofs(BBPiece::WBishop, offset) & bishop_moves > 0 {
             return true;
         }
 
-        if state.bboard_ofs(BBPiece::WQueen, other_ofs) & (rook_moves | bishop_moves) > 0 {
+        if state.bboard_ofs(BBPiece::WQueen, offset) & (rook_moves | bishop_moves) > 0 {
             return true;
         }
 
         // hit by a king
-        if state.bboard_ofs(BBPiece::WKing, other_ofs) & self.move_provider.king_move[idx] > 0 {
+        if state.bboard_ofs(BBPiece::WKing, offset) & self.move_provider.king_move[idx] > 0 {
             return true;
         }
 
@@ -287,10 +385,18 @@ impl MoveGenerator {
 
         let (this_ofs, other_ofs) = state.next_to_move.offsets();
 
-        let all_own_pieces = state.bboard_ofs(BBPiece::WAll, this_ofs);
-        let all_enemy_pieces = state.bboard_ofs(BBPiece::WAll, other_ofs);
+        let all_own_pieces_bb = state.bboard_ofs(BBPiece::WAll, this_ofs);
+        let all_enemy_pieces_bb = state.bboard_ofs(BBPiece::WAll, other_ofs);
 
-        let all_pieces = all_own_pieces | all_enemy_pieces;
+        let all_pieces = all_own_pieces_bb | all_enemy_pieces_bb;
+
+        //
+        let (this_king, this_rook, this_knight, this_bishop, this_queen) = 
+        if state.next_to_move == Side::White {
+            (BBPiece::WKing, BBPiece::WRook, BBPiece::WKnight, BBPiece::WBishop, BBPiece::WQueen)
+        } else {
+            (BBPiece::BKing, BBPiece::BRook, BBPiece::BKnight, BBPiece::BBishop, BBPiece::BQueen)
+        };
 
         //////////////////////// pawns
         let mut pawns = state.bboard_ofs(BBPiece::WPawn, this_ofs);
@@ -311,41 +417,84 @@ impl MoveGenerator {
                 ),
             };
 
-            let move_candidates = (pawn_moves[from_idx] & !all_own_pieces & !all_enemy_pieces)
+            let move_candidates = (pawn_moves[from_idx] & !all_own_pieces_bb & !all_enemy_pieces_bb)
                 | (pawn_captures[from_idx]
-                    & !all_own_pieces
-                    & (all_enemy_pieces | state.bboard_ofs(BBPiece::WEnPassant, other_ofs)));
+                    & !all_own_pieces_bb
+                    & (all_enemy_pieces_bb | state.bboard_ofs(BBPiece::WEnPassant, other_ofs)));
 
             self.fill_pawn_moves(state, moves, move_from, move_candidates);
 
             pawns = remove_last_bit(pawns);
         }
 
+        ////////////////////////// rooks
+        let mut rooks = state.bboard(this_rook);
+        while rooks > 0 {
+            let move_from = last_bit(rooks);
 
-        for piece in [BBPiece::WRook, BBPiece::WKnight, BBPiece::WBishop, BBPiece::WQueen] {
-            let mut board_pieces = state.bboard_ofs(piece, this_ofs);
-            while board_pieces > 0 {
-                let move_from = last_bit(board_pieces);
-    
-                let from_idx = move_from.trailing_zeros() as usize;
-    
-                let move_candidates =
-                    self.magic.get_rook_attack_bits(from_idx, all_pieces) & !all_own_pieces;
-    
-                self.fill_rbqn_moves(state, moves, piece, move_from, move_candidates);
-    
-                board_pieces = remove_last_bit(board_pieces);
-            }
+            let from_idx = move_from.trailing_zeros() as usize;
+
+            let move_candidates =
+                self.magic.get_rook_attack_bits(from_idx, all_pieces) & !all_own_pieces_bb;
+
+            self.fill_rbqn_moves(state, moves, this_rook, move_from, move_candidates);
+
+            rooks = remove_last_bit(rooks);
+        }
+
+        //////////////////////// knights
+        let mut knights = state.bboard(this_knight);
+        while knights > 0 {
+            let move_from = last_bit(knights);
+
+            let from_idx = move_from.trailing_zeros() as usize;
+
+            let move_candidates = self.move_provider.knight_move[from_idx] & !all_own_pieces_bb;
+
+            self.fill_rbqn_moves(state, moves, this_knight, move_from, move_candidates);
+
+            knights = remove_last_bit(knights);
+        }
+
+        ///////////////////////// bishops
+        let mut bishops = state.bboard(this_bishop);
+        while bishops > 0 {
+            let move_from = last_bit(bishops);
+
+            let from_idx = move_from.trailing_zeros() as usize;
+
+            let move_candidates =
+                self.magic.get_bishop_attack_bits(from_idx, all_pieces) & !all_own_pieces_bb;
+
+            self.fill_rbqn_moves(state, moves, this_bishop, move_from, move_candidates);
+
+            bishops = remove_last_bit(bishops);
+        }
+
+        ///////////////////////// queens
+        let mut queens = state.bboard(this_queen);
+        while queens > 0 {
+            let move_from = last_bit(queens);
+
+            let from_idx = move_from.trailing_zeros() as usize;
+
+            let move_candidates = (self.magic.get_rook_attack_bits(from_idx, all_pieces)
+                | self.magic.get_bishop_attack_bits(from_idx, all_pieces))
+                & !all_own_pieces_bb;
+                
+            self.fill_rbqn_moves(state, moves, this_queen, move_from, move_candidates);
+
+            queens = remove_last_bit(queens);
         }
 
         //////////////////////// king
-        let move_from = state.bboard_ofs(BBPiece::WKing, this_ofs);
+        let move_from = state.bboard(this_king);
 
         let from_idx = move_from.trailing_zeros() as usize;
 
-        let move_candidates = self.move_provider.king_move[from_idx] & !all_own_pieces;
+        let move_candidates = self.move_provider.king_move[from_idx] & !all_own_pieces_bb;
 
-        self.fill_rbqn_moves(state, moves, BBPiece::WKing, move_from, move_candidates);
+        self.fill_rbqn_moves(state, moves, this_king, move_from, move_candidates);
 
         // add castle moves
         self.fill_castle_moves(state, moves);
@@ -396,6 +545,25 @@ mod tests {
 
         move_generator.generate_moves(state, &mut new_moves);
 
+        /*
+        use chess::MoveGen;
+        use chess::Board;
+        use std::str::FromStr;
+
+        let fen = state.to_fen();
+        let board = Board::from_str(&fen);
+        if board.is_err() {
+            println!("fen parser error for board:{}", fen);
+        }
+        let board = board.unwrap();
+        
+        let iterable = MoveGen::new_legal(&board);
+        if new_moves.len() != iterable.len() {
+            println!("Count failure for position {}, expected {}, found {}", fen, iterable.len(), new_moves.len());
+            
+            panic!();
+        }
+*/
         for m in new_moves.iter() {
             state.do_move(m);
             result += perft_recursion(move_generator, depth - 1, state);
@@ -412,7 +580,7 @@ mod tests {
         println!("depth {}, board:", depth);
         let now = Instant::now();
 
-        state.demo();
+        state.print();
 
         let move_generator = MoveGenerator::new();
 
@@ -446,16 +614,49 @@ mod tests {
 
     #[test]
     fn test_moves1() {
-        perft_tests("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", &[20, 400, 8902, 197281, 4865609, 119060324]);
+        let a = 3;
+
+        let fen_state = "r3k2r/p1ppqpb1/bn2pnp1/3PN3/Pp2P3/2N2Q1p/1PPBBPPP/R3K2R b KQkq a3 1 0";
+        let mut state = ChessState::from_fen(fen_state);
+        state.demo();
+        
+        let move_generator = MoveGenerator::new();
+        let mut new_moves: Vec<ChessMove> = Vec::with_capacity(20);
+
+        move_generator.generate_moves(&mut state, &mut new_moves);
+
+        use chess::MoveGen;
+        use chess::Board;
+        use std::str::FromStr;
+
+        let fen = state.to_fen();
+        let board = Board::from_str(&fen).expect("Invalid Position");
+        
+        let iterable = MoveGen::new_legal(&board);
+
+        println!("Computed moves:");
+        for (idx, cmove) in new_moves.iter().enumerate() {
+            print!("move {} {}\n", idx,  cmove.to_string());
+
+            /*if idx == 0 {
+                cmove.demo();
+            }*/
+        }
+
+        println!("Expected moves:");
+        for (idx, cmove) in iterable.enumerate() {
+            print!("move {} {}\n", idx,  cmove.to_string());
+        }
+        
     }
 
     #[test]
     fn test_moves() {
         // https://www.chessprogramming.org/Perft_Results
         // initial position
-        perft_tests("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", &[20, 400, 8902, 197281, 4865609, 119060324]);
+        perft_tests("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", &[20, 400, 8902, 197281, 4865609]);//, 119060324]);
 
-        // position 2
+        /*// position 2
         perft_tests(
             "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq -",
             &[48, 2039, 97862, 4085603, 193690690],
@@ -488,7 +689,7 @@ mod tests {
         perft_tests(
             "r4rk1/1pp1qppp/p1np1n2/2b1p1B1/2B1P1b1/P1NP1N2/1PP1QPPP/R4RK1 w - - 0 10",
             &[46, 2079, 89890, 3894594, 164075551],
-        );
+        );*/
     }
 
     #[test]
@@ -546,34 +747,46 @@ fn state_is_sane(state: &mut ChessState, chess_move: &ChessMove) -> bool {
     let mut result = true;
 
     if (state.next_to_move == Side::White && state.bboard(BBPiece::WEnPassant) > 0 )
-       || (state.next_to_move == Side::Black && state.bboard(BBPiece::BEnPassant) > 0)
-       || (state.bboard(BBPiece::WEnPassant) & 0xffff00ffffffffffu64 > 0)
-       || (state.bboard(BBPiece::BEnPassant) & 0xffffffffff00ffffu64 > 0)
-    {
-        println!("Impossible en-passant state:");
-     
+       || (state.next_to_move == Side::Black && state.bboard(BBPiece::BEnPassant) > 0) {
+        println!("En-passant incompatible with the current player:");
+        result = false;
+    }
+
+    if (state.bboard(BBPiece::BEnPassant) & 0xffff00ffffffffffu64 > 0)
+       || (state.bboard(BBPiece::WEnPassant) & 0xffffffffff00ffffu64 > 0) {
+        println!("Impossible en-passant position:");
+        
         result = false;
     }
 
     if state.bboard(BBPiece::WKing).count_ones() != 1
-       || state.bboard(BBPiece::BKing).count_ones() != 1
-    {
+       || state.bboard(BBPiece::BKing).count_ones() != 1 {
         println!("Impossible king state:");
      
         result = false;
     }
 
     if all != all2 {
-        println!("Inconsistent piece bitboard state:");
+        println!("Inconsistent all piece bitboard state:");
      
         result = false;
     }
 
     if !result {
+        println!("State sanity failed!");
         state.demo();
+        state.undo_move(chess_move);
+
+        println!("State before move:");
+        println!("{}", state.to_fen());
+        println!("Last move info");
+        chess_move.demo();
+    
+        return result;
     }
 
     state.undo_move(chess_move);
+
 
     result
 }

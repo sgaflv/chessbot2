@@ -19,8 +19,10 @@ pub enum BBPiece {
     WBishop,
     WQueen,
     WAll,
+    WPins,
     WAttacks,
-    WCastles,
+    WKCastle,
+    WQCastle,
     WEnPassant,
     BKing,
     BPawn,
@@ -29,15 +31,17 @@ pub enum BBPiece {
     BBishop,
     BQueen,
     BAll,
+    BPins,
     BAttacks,
-    BCastles,
+    BKCastle,
+    BQCastle,
     BEnPassant,
 }
 
 const BBPIECE_MIDDLE: usize = BBPiece::BKing as usize;
 const BBPIECE_COUNT: usize = BBPIECE_MIDDLE * 2;
 
-const BBPIECE_ARRAY: [BBPiece;20] = [
+const BBPIECE_ARRAY: [BBPiece;24] = [
     BBPiece::WKing,
     BBPiece::WPawn,
     BBPiece::WRook,
@@ -45,8 +49,10 @@ const BBPIECE_ARRAY: [BBPiece;20] = [
     BBPiece::WBishop,
     BBPiece::WQueen,
     BBPiece::WAll,
+    BBPiece::WPins,
     BBPiece::WAttacks,
-    BBPiece::WCastles,
+    BBPiece::WKCastle,
+    BBPiece::WQCastle,
     BBPiece::WEnPassant,
     BBPiece::BKing,
     BBPiece::BPawn,
@@ -55,8 +61,10 @@ const BBPIECE_ARRAY: [BBPiece;20] = [
     BBPiece::BBishop,
     BBPiece::BQueen,
     BBPiece::BAll,
+    BBPiece::BPins,
     BBPiece::BAttacks,
-    BBPiece::BCastles,
+    BBPiece::BKCastle,
+    BBPiece::BQCastle,
     BBPiece::BEnPassant
 ];
 
@@ -74,6 +82,16 @@ const BBPIECE_PIECES: [BBPiece;12] = [
     BBPiece::BBishop,
     BBPiece::BQueen,
 ];
+
+pub const WKING_SIDE_CASLTE: u64  = 0b01000000u64;
+pub const WQUEEN_SIDE_CASLTE: u64 = 0b00000100u64;
+pub const BKING_SIDE_CASLTE: u64  = 0b00000010u64.reverse_bits();
+pub const BQUEEN_SIDE_CASLTE: u64 = 0b00100000u64.reverse_bits();
+
+pub const WKING_SIDE_ROOK: u64  = 0b10000000u64;
+pub const WQUEEN_SIDE_ROOK: u64 = 0b00000001u64;
+pub const BKING_SIDE_ROOK: u64  = 0b00000001u64.reverse_bits();
+pub const BQUEEN_SIDE_ROOK: u64 = 0b10000000u64.reverse_bits();
 
 impl BBPiece {
 
@@ -136,7 +154,7 @@ impl BBPiece {
     }
 
     #[inline]
-    pub fn get_all() -> &'static[BBPiece; 20] {
+    pub fn get_all() -> &'static[BBPiece; 24] {
         &BBPIECE_ARRAY
     }
 
@@ -150,8 +168,10 @@ impl BBPiece {
             BBPiece::WBishop  => "Bishop".to_string(),
             BBPiece::WQueen  => "Queen".to_string(),
             BBPiece::WAll  => "All".to_string(),
+            BBPiece::WPins  => "Pins".to_string(),
             BBPiece::WAttacks  => "Attacks".to_string(),
-            BBPiece::WCastles  => "Castles".to_string(),
+            BBPiece::WKCastle  => "KCastle".to_string(),
+            BBPiece::WQCastle  => "QCastle".to_string(),
             BBPiece::WEnPassant  => "EnPassant".to_string(),
             BBPiece::BKing => "king".to_string(),
             BBPiece::BPawn => "pawn".to_string(),
@@ -160,8 +180,10 @@ impl BBPiece {
             BBPiece::BBishop  => "bishop".to_string(),
             BBPiece::BQueen  => "queen".to_string(),
             BBPiece::BAll  => "all".to_string(),
+            BBPiece::BPins  => "pins".to_string(),
             BBPiece::BAttacks  => "attacks".to_string(),
-            BBPiece::BCastles  => "castles".to_string(),
+            BBPiece::BKCastle  => "kCastle".to_string(),
+            BBPiece::BQCastle  => "qCastle".to_string(),
             BBPiece::BEnPassant  => "enPassant".to_string(),
         }
     }
@@ -405,26 +427,27 @@ impl ChessState {
 
     pub fn castle_state(&self, side: Side) -> (bool, bool) {
         let bcastles = if side == Side::White {
-            self.bboard(BBPiece::WCastles)
+            (self.bboard(BBPiece::WKCastle) > 0, self.bboard(BBPiece::WQCastle) > 0)
         } else {
-            self.bboard(BBPiece::BCastles)
+            (self.bboard(BBPiece::BKCastle) > 0, self.bboard(BBPiece::BQCastle) > 0)
         };
 
-        (bcastles & 1 > 0, bcastles & 2 > 0)
+        bcastles
     }
+
 
     pub fn castle_moves(&self, side: Side) -> (BBoard, BBoard) {
         let (kcastle, qcastle) = self.castle_state(side);
 
         if side == Side::White {
             let king_side_castle = if kcastle {
-                0b01000000u64
+                WKING_SIDE_CASLTE
             } else {
                 0u64
             };
     
             let queen_side_castle = if qcastle {
-                0b00000100u64
+                WQUEEN_SIDE_CASLTE
             } else {
                 0u64
             };
@@ -432,13 +455,13 @@ impl ChessState {
             return (king_side_castle, queen_side_castle);
         } else {
             let king_side_castle = if kcastle {
-                0b00000010u64.reverse_bits()
+                BKING_SIDE_CASLTE
             } else {
                 0u64
             };
     
             let queen_side_castle = if qcastle {
-                0b00100000u64.reverse_bits()
+                BQUEEN_SIDE_CASLTE
             } else {
                 0u64
             };
@@ -448,46 +471,43 @@ impl ChessState {
         
     }
 
+    #[inline]
     pub fn set_en_passant(&mut self, en_passant: BBoard) {
-        if en_passant < 1u64 << 16 {
+        if en_passant < 1u64 << 24 {
             *self.bboard_mut(BBPiece::WEnPassant) = en_passant;
         } else {
             *self.bboard_mut(BBPiece::BEnPassant) = en_passant;
         }
     }
 
+    #[inline]
     pub fn set_castle_state(&mut self, side: Side, state: (bool, bool)) {
-        let mut new_state: BBoard = 0;
-        if state.0 {new_state += 1};
-        if state.1 {new_state += 2};
-
+        
         if side == Side::White {
-            *self.bboard_mut(BBPiece::WCastles) = new_state;
+            *self.bboard_mut(BBPiece::WKCastle) = if state.0 {WKING_SIDE_CASLTE} else {0u64};
+            *self.bboard_mut(BBPiece::WQCastle) = if state.1 {WQUEEN_SIDE_CASLTE} else {0u64};
         } else {
-            *self.bboard_mut(BBPiece::BCastles) = new_state;
+            *self.bboard_mut(BBPiece::BKCastle) = if state.0 {BKING_SIDE_CASLTE} else {0u64};
+            *self.bboard_mut(BBPiece::BQCastle) = if state.1 {BQUEEN_SIDE_CASLTE} else {0u64};
         };
-
     }
 
+    #[inline]
     pub fn set_king_side_castle(&mut self, side: Side, value: bool) {
-        let mut new_state = 0;
-        if value {new_state += 1};
 
         if side == Side::White {
-            *self.bboard_mut(BBPiece::WCastles) = new_state;
+            *self.bboard_mut(BBPiece::WKCastle) = if value {WKING_SIDE_CASLTE} else {0u64};
         } else {
-            *self.bboard_mut(BBPiece::BCastles) = new_state;
+            *self.bboard_mut(BBPiece::BKCastle) = if value {BKING_SIDE_CASLTE} else {0u64};
         };
     }
 
     pub fn set_queen_side_castle(&mut self, side: Side, value: bool) {
-        let mut new_state = 0;
-        if value {new_state += 2};
 
         if side == Side::White {
-            *self.bboard_mut(BBPiece::WCastles) = new_state;
+            *self.bboard_mut(BBPiece::WQCastle) = if value {WQUEEN_SIDE_CASLTE} else {0u64};
         } else {
-            *self.bboard_mut(BBPiece::BCastles) = new_state;
+            *self.bboard_mut(BBPiece::BQCastle) = if value {BQUEEN_SIDE_CASLTE} else {0u64};
         };
     }
 
@@ -665,11 +685,8 @@ impl ChessState {
         state
     }
 
-}
+    pub fn print(&self) {
 
-impl Demo for ChessState {
-
-    fn demo(&self) {
         println!("{}", self.to_fen());
 
         let mut result = ['.'; 64];
@@ -708,6 +725,15 @@ impl Demo for ChessState {
             self.castle_string(),
             self.en_passant_string()
         );
+
+    }
+
+}
+
+impl Demo for ChessState {
+
+    fn demo(&self) {
+        self.print();
 
         for piece in BBPiece::get_all() {
             println!("{}",piece.to_string());

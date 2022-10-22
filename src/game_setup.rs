@@ -2,7 +2,7 @@
 use std::num::Wrapping;
 use std::result::Result;
 
-use crate::bboard::{BBoard, bb_print};
+use crate::bboard::{BBoard, bb_print, bb_to_coord};
 use crate::engine::ChessEngine;
 use crate::state::{ChessState, BBPiece, Side};
 
@@ -142,11 +142,24 @@ impl ChessMove {
         let result = match king_move_to {
             0b01000000u64 => w_k,
             0b00000100u64 => w_q,
-            0b0000001000000000000000000000000000000000000000000000000000000000u64 => b_k,
-            0b0010000000000000000000000000000000000000000000000000000000000000u64 => b_q,
+            0b0100000000000000000000000000000000000000000000000000000000000000u64 => b_k,
+            0b0000010000000000000000000000000000000000000000000000000000000000u64 => b_q,
             _ => {
                 println!("King move not found!");
                 bb_print(king_move_to);
+
+                println!("Candidate w_k:");
+                bb_print(0b01000000u64);
+                
+                println!("Candidate w_q:");
+                bb_print(0b00000100u64);
+
+                println!("Candidate b_k:");
+                bb_print(0b0000010000000000000000000000000000000000000000000000000000000000u64);
+
+                println!("Candidate b_q:");
+                bb_print(0b0100000000000000000000000000000000000000000000000000000000000000u64);
+                
                 panic!();
             },
         };
@@ -246,7 +259,6 @@ impl ChessMove {
             } else {
                 result.add_delta(BBPiece::BRook, rook_move);
             }
-            
         }
 
         Ok(result)
@@ -255,14 +267,28 @@ impl ChessMove {
     pub fn to_string(&self) -> String {
         let mut result = String::with_capacity(4);
 
-        result.push_str(self.move_from.to_string().as_str());
-        result.push_str(self.move_from.to_string().as_str());
+        result.push_str(self.get_piece().to_string().as_str());
+        result.push_str(" ");
+        result.push_str(bb_to_coord(self.move_from).as_str());
+        result.push_str("-");
+        result.push_str(bb_to_coord(self.move_to).as_str());
         
         if let Some(promoted) = self.promote {
             result.push(promoted.to_char());
         }
 
         result
+    }
+
+    pub fn demo(&self) {
+
+        println!("Move: {}", self.to_string());
+        println!("deltas:");
+        for (piece, board) in self.deltas.iter() {
+            println!("{}", piece.to_string());
+            bb_print(*board);
+        }
+
     }
 }
 
