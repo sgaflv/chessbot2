@@ -612,8 +612,9 @@ mod tests {
         }
     }
 
+    /* 
     #[test]
-    fn test_moves1() {
+    fn test_chess() {
         let a = 3;
 
         let fen_state = "r3k2r/p1ppqpb1/bn2pnp1/3PN3/Pp2P3/2N2Q1p/1PPBBPPP/R3K2R b KQkq a3 1 0";
@@ -649,7 +650,7 @@ mod tests {
         }
         
     }
-
+*/
     #[test]
     fn test_moves() {
         // https://www.chessprogramming.org/Perft_Results
